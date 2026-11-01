@@ -1,0 +1,6 @@
+{
+  "name": "UniGrova Linux Lab",
+  "description": "Real Linux in Browser – An in-browser Linux operating system simulator powered by WebAssembly v86 virtualization, full Ubuntu desktop interface, interactive terminal, filesystem manager, and learning lab.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
