@@ -24,7 +24,7 @@ export const ProgrammingLabApp: React.FC<ProgrammingLabAppProps> = ({ onOpenInTe
   const [selectedTemplate, setSelectedTemplate] = useState<ProjectTemplate>(PROJECT_TEMPLATES[0]);
   const [activeFile, setActiveFile] = useState<string>(PROJECT_TEMPLATES[0].defaultFile);
   const [code, setCode] = useState<string>(() => {
-    const existing = vfsService.readFile(`/home/sheikh/${PROJECT_TEMPLATES[0].defaultFile}`);
+    const existing = vfsService.readFile(`/home/unigrova/Projects/${PROJECT_TEMPLATES[0].defaultFile}`);
     return existing || PROJECT_TEMPLATES[0].files[0].content;
   });
   const [output, setOutput] = useState<string>('Console idle. Click "Run Program" to compile and execute.');
@@ -36,7 +36,7 @@ export const ProgrammingLabApp: React.FC<ProgrammingLabAppProps> = ({ onOpenInTe
   const handleSelectTemplate = (template: ProjectTemplate) => {
     setSelectedTemplate(template);
     setActiveFile(template.defaultFile);
-    const existing = vfsService.readFile(`/home/sheikh/${template.defaultFile}`);
+    const existing = vfsService.readFile(`/home/unigrova/Projects/${template.defaultFile}`);
     const file = template.files.find((f) => f.name === template.defaultFile) || template.files[0];
     setCode(existing || file.content);
     setOutput(`Switched to ${template.title}. Ready to compile.`);
@@ -48,64 +48,57 @@ export const ProgrammingLabApp: React.FC<ProgrammingLabAppProps> = ({ onOpenInTe
     setIsRunning(true);
     setExitCode(null);
     const startTime = performance.now();
-    const targetPath = `/home/sheikh/${activeFile}`;
+    const targetPath = `/home/unigrova/Projects/${activeFile}`;
 
-    setOutput(`[BUILD] Preparing ${activeFile} for Linux execution...\n`);
+    setOutput(`[BUILD] Preparing ${activeFile} on Linux filesystem...\n`);
 
-    // Save to real Virtual Filesystem
+    // Save to real Virtual Filesystem and disk
     vfsService.writeFile(targetPath, code);
-    setOutput((prev) => `${prev}[VFS] Saved source to ${targetPath} (${new TextEncoder().encode(code).length} bytes)\n`);
+    setOutput((prev) => `${prev}[DISK] Saved source to ${targetPath}\n`);
 
-    setTimeout(() => {
-      try {
-        if (selectedTemplate.language === 'bash') {
-          setOutput((prev) => `${prev}[EXEC] Invoking /bin/sh ${targetPath}\n----------------------------------------\n`);
-          const lines = code.split('\n');
-          let captured = '';
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) continue;
-            const res = defaultShell.execute(trimmed);
-            if (res.output) captured += res.output;
-          }
-          setOutput((prev) => `${prev}${captured || 'Script finished with no stdout.'}\n----------------------------------------\n[PROCESS] Finished with exit code 0`);
-          setExitCode(0);
-        } else if (selectedTemplate.language === 'c') {
-          setOutput((prev) => `${prev}[COMPILER] gcc -Wall -O2 ${targetPath} -o /root/app_binary\n`);
-          setOutput((prev) => `${prev}[LINKER] Linking dynamic libc.so.6... Build successful.\n`);
-          setOutput((prev) => `${prev}[EXEC] Executing /root/app_binary:\n----------------------------------------\n`);
-
-          if (activeFile.includes('linked_list')) {
-            setOutput(
-              (prev) =>
-                `${prev}Allocating dynamic linked list in Linux memory...\nTraversing list items: [10] -> [20] -> [30] -> [40] -> [50] -> NULL\nMemory successfully freed.\n----------------------------------------\n[PROCESS] Process exited with status 0.`
-            );
-          } else {
-            setOutput(
-              (prev) =>
-                `${prev}========================================\n  UniGrova Linux Lab: C Environment\n========================================\nHello from a real Linux C program!\nProcess PID: ${Math.floor(
-                  100 + Math.random() * 50
-                )}\nExecution completed successfully.\n----------------------------------------\n[PROCESS] Process exited with status 0.`
-            );
-          }
-          setExitCode(0);
-        } else if (selectedTemplate.language === 'python') {
-          setOutput((prev) => `${prev}[EXEC] python3 ${targetPath}\n----------------------------------------\n`);
-          setOutput(
-            (prev) =>
-              `${prev}=============================================\nUniGrova Linux Lab - Python Environment\n=============================================\nPython Version: 3.11.4\nSystem: Linux (x86_64)\nCurrent Working Directory: /root\nAnalyzed Dataset: [14, 28, 56, 82, 91, 105, 33]\nSum: 409 | Count: 7 | Average: 58.43\nTask finished successfully.\n----------------------------------------\n[PROCESS] Finished with exit code 0`
-          );
-          setExitCode(0);
-        }
-      } catch (err: any) {
-        setOutput((prev) => `${prev}\n[ERROR] Execution failed: ${err.message || String(err)}`);
-        setExitCode(1);
-      } finally {
-        const endTime = performance.now();
-        setExecutionTimeMs(Math.round(endTime - startTime));
-        setIsRunning(false);
+    try {
+      let command = '';
+      if (selectedTemplate.language === 'bash') {
+        setOutput((prev) => `${prev}[EXEC] /bin/bash ${targetPath}\n----------------------------------------\n`);
+        command = `bash "${targetPath}"`;
+      } else if (selectedTemplate.language === 'c') {
+        setOutput((prev) => `${prev}[COMPILER] gcc -Wall -O2 "${targetPath}" -o /tmp/prog\n[EXEC] Running /tmp/prog\n----------------------------------------\n`);
+        command = `gcc -Wall -O2 "${targetPath}" -o /tmp/prog && /tmp/prog`;
+      } else if (selectedTemplate.language === 'python') {
+        setOutput((prev) => `${prev}[EXEC] /usr/bin/python3 "${targetPath}"\n----------------------------------------\n`);
+        command = `python3 "${targetPath}"`;
       }
-    }, 400);
+
+      const response = await fetch('/api/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command,
+          cwd: '/home/unigrova',
+          user: 'unigrova',
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        let resultText = data.stdout || '';
+        if (data.stderr) {
+          resultText += (resultText ? '\n' : '') + data.stderr;
+        }
+        setOutput((prev) => `${prev}${resultText || '(Process exited with no output)'}\n----------------------------------------\n[PROCESS] Finished with exit code ${data.exitCode}`);
+        setExitCode(data.exitCode);
+      } else {
+        setOutput((prev) => `${prev}[ERROR] Backend compiler server returned status ${response.status}`);
+        setExitCode(1);
+      }
+    } catch (err: any) {
+      setOutput((prev) => `${prev}\n[ERROR] Execution failed: ${err.message || String(err)}`);
+      setExitCode(1);
+    } finally {
+      const endTime = performance.now();
+      setExecutionTimeMs(Math.round(endTime - startTime));
+      setIsRunning(false);
+    }
   };
 
   const handleCopyOutput = () => {

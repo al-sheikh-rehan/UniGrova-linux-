@@ -3,6 +3,7 @@ export type WindowId =
   | 'files'
   | 'editor'
   | 'ide'
+  | 'python'
   | 'monitor'
   | 'calc'
   | 'settings'

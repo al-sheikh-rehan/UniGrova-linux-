@@ -4,6 +4,7 @@ import {
   BookOpen,
   Calculator,
   Code2,
+  FileCode,
   FileText,
   Folder,
   Globe,
@@ -28,33 +29,41 @@ export const Dock: React.FC<DockProps> = ({
   onOpenApp,
   onToggleLauncher,
 }) => {
-  const dockApps: { id: WindowId; label: string; icon: React.FC<{ className?: string }>; color: string }[] = [
-    { id: 'terminal', label: 'Terminal (xterm.js)', icon: Terminal, color: 'text-orange-400 bg-stone-900' },
-    { id: 'files', label: 'Files (Linux Filesystem)', icon: Folder, color: 'text-orange-400 bg-stone-900' },
-    { id: 'editor', label: 'Text Editor', icon: FileText, color: 'text-blue-400 bg-stone-900' },
-    { id: 'ide', label: 'C / Script Programming Lab', icon: Code2, color: 'text-emerald-400 bg-stone-900' },
-    { id: 'lab', label: 'Linux Practice Lab', icon: GraduationCap, color: 'text-yellow-400 bg-stone-900' },
-    { id: 'monitor', label: 'System Monitor', icon: Activity, color: 'text-purple-400 bg-stone-900' },
-    { id: 'reference', label: 'Command Reference', icon: BookOpen, color: 'text-cyan-400 bg-stone-900' },
-    { id: 'browser', label: 'Web Browser', icon: Globe, color: 'text-blue-500 bg-stone-900' },
-    { id: 'calc', label: 'Calculator', icon: Calculator, color: 'text-stone-300 bg-stone-900' },
-    { id: 'settings', label: 'System Settings', icon: Sliders, color: 'text-stone-400 bg-stone-900' },
+  // Pinned apps on the home screen dock: Terminal, Files, System Monitor, Calculator, Settings
+  // Other apps from Show Applications appear dynamically in the dock when running.
+  const allKnownApps: { id: WindowId; label: string; icon: React.FC<{ className?: string }>; color: string; pinned?: boolean }[] = [
+    { id: 'terminal', label: 'Terminal (unigrova@user)', icon: Terminal, color: 'text-orange-400 bg-stone-900', pinned: true },
+    { id: 'files', label: 'Files (File Manager)', icon: Folder, color: 'text-blue-400 bg-stone-900', pinned: true },
+    { id: 'monitor', label: 'System Monitor', icon: Activity, color: 'text-rose-400 bg-stone-900', pinned: true },
+    { id: 'calc', label: 'Calculator', icon: Calculator, color: 'text-amber-400 bg-stone-900', pinned: true },
+    { id: 'settings', label: 'Settings', icon: Sliders, color: 'text-teal-400 bg-stone-900', pinned: true },
+    { id: 'browser', label: 'Firefox Browser', icon: Globe, color: 'text-amber-400 bg-stone-900' },
+    { id: 'editor', label: 'Text Editor', icon: FileText, color: 'text-emerald-400 bg-stone-900' },
+    { id: 'python', label: 'Python Editor', icon: FileCode, color: 'text-yellow-400 bg-stone-900' },
+    { id: 'ide', label: 'C/C++ Programming Lab', icon: Code2, color: 'text-cyan-400 bg-stone-900' },
+    { id: 'lab', label: 'Linux Practice Lab', icon: GraduationCap, color: 'text-purple-400 bg-stone-900' },
   ];
+
+  const dockApps = allKnownApps.filter((app) => {
+    if (app.pinned) return true;
+    const win = windows.find((w) => w.id === app.id);
+    return win && win.isOpen;
+  });
 
   const isLeft = position === 'left';
 
   return (
     <aside
-      className={`bg-stone-950/80 backdrop-blur-md border-stone-800/80 flex z-30 select-none ${
+      className={`bg-black/60 backdrop-blur-xl border-black/40 flex z-30 select-none ${
         isLeft
-          ? 'w-14 h-[calc(100vh-1.75rem)] flex-col justify-between items-center py-2 border-r'
-          : 'h-14 w-full flex-row justify-center items-center px-4 border-t gap-2'
+          ? 'w-16 h-[calc(100vh-2rem)] flex-col justify-between items-center py-3 border-r'
+          : 'h-16 w-full flex-row justify-center items-center px-4 border-t gap-2'
       }`}
     >
       {/* App Icons List */}
       <div
         className={`flex ${
-          isLeft ? 'flex-col gap-1.5' : 'flex-row gap-2'
+          isLeft ? 'flex-col gap-2' : 'flex-row gap-2'
         } items-center`}
       >
         {dockApps.map((app) => {
@@ -64,23 +73,23 @@ export const Dock: React.FC<DockProps> = ({
 
           return (
             <div key={app.id} className="relative group flex items-center justify-center">
-              {/* Running orange dot indicator on left or bottom */}
+              {/* Running dot indicator on left or bottom */}
               {isOpen && (
                 <span
                   className={`absolute ${
                     isLeft
-                      ? 'left-0.5 w-1 h-3 rounded-r-full bg-orange-500'
-                      : 'bottom-0.5 w-3 h-1 rounded-t-full bg-orange-500'
+                      ? 'left-1 w-1.5 h-1.5 rounded-full bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.8)]'
+                      : 'bottom-1 w-1.5 h-1.5 rounded-full bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.8)]'
                   }`}
                 />
               )}
 
               <button
                 onClick={() => onOpenApp(app.id)}
-                className={`p-2.5 rounded-xl border border-stone-800/60 shadow-sm transition-all duration-150 ${
+                className={`p-2.5 rounded-2xl border transition-all duration-150 ${
                   isOpen
-                    ? 'bg-stone-800/90 text-white hover:scale-105 hover:bg-stone-700'
-                    : 'bg-stone-900/60 hover:bg-stone-800 hover:scale-105'
+                    ? 'bg-stone-800/90 border-stone-700/80 text-white shadow-lg scale-105'
+                    : 'bg-stone-900/60 border-stone-800/60 hover:bg-stone-800/90 hover:border-stone-700/80 hover:scale-105'
                 }`}
               >
                 <IconComponent className={`w-5 h-5 ${app.color}`} />
@@ -104,7 +113,7 @@ export const Dock: React.FC<DockProps> = ({
         <button
           onClick={onToggleLauncher}
           title="Show Applications"
-          className="p-2.5 rounded-xl bg-stone-900/80 hover:bg-orange-600 hover:text-white text-stone-300 border border-stone-800 transition-all hover:scale-105"
+          className="p-2.5 rounded-2xl bg-stone-900/80 hover:bg-teal-600 hover:text-white text-stone-300 border border-stone-800 transition-all hover:scale-105 active:scale-95 shadow-md"
         >
           <Grid className="w-5 h-5" />
         </button>

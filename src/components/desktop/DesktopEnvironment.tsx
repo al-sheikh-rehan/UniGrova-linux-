@@ -4,11 +4,13 @@ import {
   BookOpen,
   Calculator,
   Code2,
+  FileCode,
   FileText,
   Folder,
   Globe,
   GraduationCap,
   Home,
+  RefreshCw,
   Sliders,
   Terminal,
   Trash2,
@@ -25,6 +27,7 @@ import { TerminalApp } from '../apps/TerminalApp';
 import { FileManagerApp } from '../apps/FileManagerApp';
 import { TextEditorApp } from '../apps/TextEditorApp';
 import { ProgrammingLabApp } from '../apps/ProgrammingLabApp';
+import { PythonEditorApp } from '../apps/PythonEditorApp';
 import { SystemMonitorApp } from '../apps/SystemMonitorApp';
 import { ReferenceApp } from '../apps/ReferenceApp';
 import { LearningLabApp } from '../apps/LearningLabApp';
@@ -39,10 +42,10 @@ interface DesktopEnvironmentProps {
 
 export const DesktopEnvironment: React.FC<DesktopEnvironmentProps> = ({
   onBackToHome,
-  defaultOpenApp = 'terminal',
+  defaultOpenApp,
 }) => {
   const [wallpaper, setWallpaper] = useState<string>(
-    '/src/assets/images/ubuntu_jammy_wallpaper_1793457587205.jpg'
+    '/src/assets/images/gnome_teal_wallpaper_1793641902891.jpg'
   );
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
   const [dockPosition, setDockPosition] = useState<'left' | 'bottom'>('left');
@@ -58,8 +61,8 @@ export const DesktopEnvironment: React.FC<DesktopEnvironmentProps> = ({
   const [windows, setWindows] = useState<WindowState[]>([
     {
       id: 'terminal',
-      title: 'Terminal (sheikh@linux:~)',
-      isOpen: defaultOpenApp === 'terminal',
+      title: 'Terminal (unigrova@user:~)',
+      isOpen: defaultOpenApp ? defaultOpenApp === 'terminal' : true,
       isMinimized: false,
       isMaximized: false,
       zIndex: 10,
@@ -68,7 +71,7 @@ export const DesktopEnvironment: React.FC<DesktopEnvironmentProps> = ({
     },
     {
       id: 'files',
-      title: 'Files (Linux Filesystem Explorer)',
+      title: 'Files (Nautilus — /home/unigrova)',
       isOpen: defaultOpenApp === 'files',
       isMinimized: false,
       isMaximized: false,
@@ -87,6 +90,16 @@ export const DesktopEnvironment: React.FC<DesktopEnvironmentProps> = ({
       size: { width: 720, height: 480 },
     },
     {
+      id: 'python',
+      title: 'Python 3 Editor & Sandbox',
+      isOpen: defaultOpenApp === 'python',
+      isMinimized: false,
+      isMaximized: false,
+      zIndex: 10,
+      position: { x: 140, y: 65 },
+      size: { width: 820, height: 510 },
+    },
+    {
       id: 'ide',
       title: 'C & Script Programming Lab',
       isOpen: defaultOpenApp === 'ide',
@@ -98,13 +111,13 @@ export const DesktopEnvironment: React.FC<DesktopEnvironmentProps> = ({
     },
     {
       id: 'lab',
-      title: 'Linux Practice Challenges & MCQs',
+      title: 'LPU CSE65D: Operating Systems Laboratory (2026–27)',
       isOpen: defaultOpenApp === 'lab',
       isMinimized: false,
       isMaximized: false,
       zIndex: 10,
-      position: { x: 140, y: 70 },
-      size: { width: 800, height: 520 },
+      position: { x: 100, y: 50 },
+      size: { width: 880, height: 560 },
     },
     {
       id: 'monitor',
@@ -232,14 +245,13 @@ export const DesktopEnvironment: React.FC<DesktopEnvironmentProps> = ({
 
   const activeWindow = windows.find((w) => w.isOpen && !w.isMinimized);
 
-  // Desktop Icons
+  // Desktop Icons on Home Screen: Terminal, Files, System Monitor, Settings, and Calculator
   const desktopShortcuts = [
     { id: 'terminal' as WindowId, label: 'Terminal', icon: Terminal, color: 'text-orange-400' },
-    { id: 'files' as WindowId, label: 'File Manager', icon: Folder, color: 'text-orange-400' },
-    { id: 'ide' as WindowId, label: 'C Programming', icon: Code2, color: 'text-emerald-400' },
-    { id: 'lab' as WindowId, label: 'Practice Lab', icon: GraduationCap, color: 'text-yellow-400' },
-    { id: 'reference' as WindowId, label: 'Command Library', icon: BookOpen, color: 'text-cyan-400' },
-    { id: 'monitor' as WindowId, label: 'System Monitor', icon: Activity, color: 'text-purple-400' },
+    { id: 'files' as WindowId, label: 'Files', icon: Folder, color: 'text-blue-400' },
+    { id: 'monitor' as WindowId, label: 'System Monitor', icon: Activity, color: 'text-rose-400' },
+    { id: 'settings' as WindowId, label: 'Settings', icon: Sliders, color: 'text-teal-400' },
+    { id: 'calc' as WindowId, label: 'Calculator', icon: Calculator, color: 'text-amber-400' },
   ];
 
   return (
@@ -284,14 +296,15 @@ export const DesktopEnvironment: React.FC<DesktopEnvironmentProps> = ({
 
         {/* Desktop Surface Canvas */}
         <div className="flex-1 relative h-full overflow-hidden">
-          {/* Back to Home Page Floating Button on Desktop */}
+          {/* Reboot Linux VM Floating Button on Desktop */}
           <div className="absolute top-4 right-4 z-20">
             <button
               onClick={onBackToHome}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-950/80 hover:bg-stone-900 border border-stone-800 text-stone-300 text-xs shadow-lg backdrop-blur-md transition-colors"
+              title="Reboot Linux System"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-stone-950/70 hover:bg-stone-900 border border-stone-800 text-stone-300 text-xs shadow-lg backdrop-blur-md transition-all hover:scale-105"
             >
-              <Home className="w-3.5 h-3.5 text-orange-400" />
-              <span>Exit to Home</span>
+              <RefreshCw className="w-3.5 h-3.5 text-teal-400" />
+              <span>Reboot VM</span>
             </button>
           </div>
 
@@ -340,6 +353,9 @@ export const DesktopEnvironment: React.FC<DesktopEnvironmentProps> = ({
                 )}
                 {win.id === 'editor' && (
                   <TextEditorApp initialPath={editorInitialPath} />
+                )}
+                {win.id === 'python' && (
+                  <PythonEditorApp onOpenInTerminal={handleRunInTerminal} />
                 )}
                 {win.id === 'ide' && (
                   <ProgrammingLabApp onOpenInTerminal={handleRunInTerminal} />

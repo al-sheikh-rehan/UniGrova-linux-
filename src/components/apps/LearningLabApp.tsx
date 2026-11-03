@@ -1,424 +1,651 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Award,
-  CheckCircle2,
+  BookOpen,
   Check,
+  CheckCircle2,
   ChevronRight,
-  Circle,
-  Compass,
+  Copy,
+  Download,
+  ExternalLink,
+  FileCode,
+  FileText,
   GraduationCap,
   HelpCircle,
+  Network,
   Play,
+  RefreshCw,
   RotateCcw,
+  Shield,
+  Sliders,
   Terminal,
+  User,
   Zap,
 } from 'lucide-react';
-import { LAB_LESSONS, LINUX_QUIZ } from '../../data/linuxData';
+import { LPU_CSE65D_EXPERIMENTS, LPUExperiment, LPUTask } from '../../data/lpuSyllabusData';
 import { storageService } from '../../services/storageService';
-import { v86Service } from '../../services/v86Service';
-import { vfsService } from '../../services/vfsService';
-import { defaultShell } from '../../services/shellService';
-import { LabLesson, LabTask, QuizQuestion } from '../../types';
 
 interface LearningLabAppProps {
   onRunInTerminal?: (cmd: string) => void;
 }
 
 export const LearningLabApp: React.FC<LearningLabAppProps> = ({ onRunInTerminal }) => {
-  const [activeTab, setActiveTab] = useState<'lessons' | 'quiz'>('lessons');
-  const [selectedTier, setSelectedTier] = useState<'all' | 'beginner' | 'intermediate' | 'advanced'>('all');
-  const [completedTasks, setCompletedTasks] = useState<string[]>(() => storageService.getCompletedTasks());
+  const [selectedExpId, setSelectedExpId] = useState<string>('exp-1');
+  const [activeTab, setActiveTab] = useState<'practicals' | 'theory' | 'viva' | 'report'>('practicals');
+  const [completedTasks, setCompletedTasks] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('lpu_cse65d_completed_tasks');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [verifyingTaskId, setVerifyingTaskId] = useState<string | null>(null);
-  const [verificationFeedback, setVerificationFeedback] = useState<{ [id: string]: string }>({});
+  const [taskFeedback, setTaskFeedback] = useState<{ [id: string]: { passed: boolean; message: string; output?: string } }>({});
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
 
-  // Quiz state
-  const [quizAnswers, setQuizAnswers] = useState<{ [id: string]: number }>({});
-  const [submittedQuiz, setSubmittedQuiz] = useState<boolean>(false);
+  // Student Report Details
+  const [studentName, setStudentName] = useState<string>('Student');
+  const [regNo, setRegNo] = useState<string>('12200000');
+  const [section, setSection] = useState<string>('K22AB');
+  const [rollNo, setRollNo] = useState<string>('01');
 
-  // Filter lessons
-  const filteredLessons = LAB_LESSONS.filter(
-    (l) => selectedTier === 'all' || l.tier === selectedTier
-  );
+  useEffect(() => {
+    localStorage.setItem('lpu_cse65d_completed_tasks', JSON.stringify(completedTasks));
+  }, [completedTasks]);
 
-  const totalTasks = LAB_LESSONS.reduce((acc, l) => acc + l.tasks.length, 0);
+  const activeExp = LPU_CSE65D_EXPERIMENTS.find((e) => e.id === selectedExpId) || LPU_CSE65D_EXPERIMENTS[0];
+
+  const totalTasks = LPU_CSE65D_EXPERIMENTS.reduce((acc, e) => acc + e.tasks.length, 0);
   const progressPercent = Math.round((completedTasks.length / totalTasks) * 100);
 
-  const handleVerifyTask = (task: LabTask) => {
+  const handleVerifyTask = async (task: LPUTask) => {
     setVerifyingTaskId(task.id);
     try {
-      let isVerified = false;
-      let failureReason = '';
+      const response = await fetch('/api/lab/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          experimentId: activeExp.id,
+          taskId: task.id,
+          checkScript: task.checkScript,
+        }),
+      });
 
-      // Check specific task conditions
-      if (task.id === 'task-1-1') {
-        const res = defaultShell.execute('pwd');
-        isVerified = res.output.includes('/');
-      } else if (task.id === 'task-1-2') {
-        const res = defaultShell.execute('ls -la');
-        isVerified = res.output.includes('total') || res.output.length > 0;
-      } else if (task.id === 'task-1-3') {
-        isVerified = vfsService.isDirectory('/lab_project');
-        if (!isVerified) failureReason = 'Directory /lab_project has not been created yet. Run: mkdir /lab_project';
-      } else if (task.id === 'task-2-1') {
-        isVerified = vfsService.exists('/lab_project/notes.txt');
-        if (!isVerified) failureReason = 'File /lab_project/notes.txt not found. Run: touch /lab_project/notes.txt';
-      } else if (task.id === 'task-2-2') {
-        const content = vfsService.readFile('/lab_project/notes.txt') || '';
-        isVerified = content.toLowerCase().includes('welcome') || content.toLowerCase().includes('linux');
-        if (!isVerified) failureReason = 'Content missing in /lab_project/notes.txt. Try: echo "Welcome to UniGrova Linux Lab" > /lab_project/notes.txt';
-      } else if (task.id === 'task-2-3') {
-        const res = defaultShell.execute('head -n 15 /proc/cpuinfo');
-        isVerified = res.output.includes('processor') || res.output.includes('model name');
-      } else if (task.id === 'task-3-1') {
-        const res = defaultShell.execute('wc -l /etc/passwd');
-        isVerified = res.exitCode === 0;
-      } else if (task.id === 'task-3-2') {
-        const res = defaultShell.execute('grep root /etc/passwd');
-        isVerified = res.output.includes('root:x:0:0');
-      } else if (task.id === 'task-3-3') {
-        const res = defaultShell.execute('cat /proc/version');
-        isVerified = res.output.includes('Linux');
-      } else if (task.id === 'task-4-1') {
-        isVerified = vfsService.exists('/lab_project/script.sh');
-        if (!isVerified) failureReason = 'File /lab_project/script.sh not found. Create it with echo or in the editor.';
-      } else if (task.id === 'task-4-2') {
-        const entry = vfsService.getEntry('/lab_project/script.sh');
-        isVerified = !!entry && entry.permissions.includes('x');
-        if (!isVerified) failureReason = 'Permissions not set to execute (+x). Run: chmod +x /lab_project/script.sh';
-      } else if (task.id === 'task-4-3') {
-        const res = defaultShell.execute('/lab_project/script.sh');
-        isVerified = res.exitCode === 0;
-      } else if (task.verificationCmd) {
-        const res = defaultShell.execute(task.verificationCmd);
-        isVerified = !task.verificationPattern || res.output.includes(task.verificationPattern);
-        if (!isVerified) failureReason = `Verification check returned: "${res.output.trim()}"`;
+      if (response.ok) {
+        const data = await response.json();
+        if (data.passed) {
+          if (!completedTasks.includes(task.id)) {
+            setCompletedTasks((prev) => [...prev, task.id]);
+          }
+          setTaskFeedback((prev) => ({
+            ...prev,
+            [task.id]: {
+              passed: true,
+              message: 'Verified successfully on real Linux environment!',
+              output: data.stdout || 'Requirement satisfied.',
+            },
+          }));
+        } else {
+          setTaskFeedback((prev) => ({
+            ...prev,
+            [task.id]: {
+              passed: false,
+              message: 'Verification check failed on system.',
+              output: data.stderr || data.stdout || 'Please run the required command in terminal first.',
+            },
+          }));
+        }
       } else {
-        isVerified = true;
-      }
-
-      if (isVerified) {
-        storageService.setTaskCompleted(task.id);
-        setCompletedTasks(storageService.getCompletedTasks());
-        setVerificationFeedback((prev) => ({
+        // Fallback verification if server returned error
+        setTaskFeedback((prev) => ({
           ...prev,
-          [task.id]: 'Task passed! Step completed successfully.',
-        }));
-      } else {
-        setVerificationFeedback((prev) => ({
-          ...prev,
-          [task.id]: failureReason || 'Task requirement not satisfied yet.',
+          [task.id]: {
+            passed: false,
+            message: 'Server verification returned error code.',
+          },
         }));
       }
-    } catch (e: any) {
-      setVerificationFeedback((prev) => ({
+    } catch (err: any) {
+      setTaskFeedback((prev) => ({
         ...prev,
-        [task.id]: `Verification error: ${e.message}`,
+        [task.id]: {
+          passed: false,
+          message: `Network error: ${err.message}`,
+        },
       }));
     } finally {
       setVerifyingTaskId(null);
     }
   };
 
-  const handleResetProgress = () => {
-    if (confirm('Reset all lab exercise progress?')) {
-      storageService.resetLabProgress();
-      setCompletedTasks([]);
-      setVerificationFeedback({});
+  const handleCopy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCmd(id);
+    setTimeout(() => setCopiedCmd(null), 2000);
+  };
+
+  const handleRunCommand = (cmd: string) => {
+    if (onRunInTerminal) {
+      onRunInTerminal(cmd);
     }
   };
 
-  const handleAnswerSelect = (qId: string, optIndex: number) => {
-    if (submittedQuiz) return;
-    setQuizAnswers((prev) => ({ ...prev, [qId]: optIndex }));
+  const handleResetProgress = () => {
+    if (confirm('Reset all LPU CSE65D Laboratory task progress?')) {
+      setCompletedTasks([]);
+      setTaskFeedback({});
+      localStorage.removeItem('lpu_cse65d_completed_tasks');
+    }
   };
 
-  const quizScore = LINUX_QUIZ.reduce((score, q) => {
-    return quizAnswers[q.id] === q.correctIndex ? score + 1 : score;
-  }, 0);
+  const handleDownloadReport = () => {
+    const dateStr = new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    let report = `================================================================================
+LOVELY PROFESSIONAL UNIVERSITY (LPU)
+DEPARTMENT OF COMPUTER SCIENCE & ENGINEERING
+CSE65D: OPERATING SYSTEMS LABORATORY — SESSION 2026–27
+PRACTICAL EXPERIMENT RECORD & EVALUATION REPORT
+================================================================================
+
+Student Information:
+Student Name   : ${studentName}
+Registration No: ${regNo}
+Section        : ${section}
+Roll Number    : ${rollNo}
+Date of Exam   : ${dateStr}
+Host Platform  : Debian GNU/Linux 12 (bookworm) x86_64
+User Identity  : unigrova@user (Real Linux Environment)
+Kernel Version : 5.15.0-generic SMP
+Completed Tasks: ${completedTasks.length} / ${totalTasks} (${progressPercent}%)
+
+================================================================================
+SYLLABUS EXPERIMENTS & PERFORMANCE AUDIT
+================================================================================
+`;
+
+    LPU_CSE65D_EXPERIMENTS.forEach((exp) => {
+      const expTasks = exp.tasks;
+      const doneCount = expTasks.filter((t) => completedTasks.includes(t.id)).length;
+      report += `\n[EXPERIMENT ${exp.expNumber}]: ${exp.title.toUpperCase()}\n`;
+      report += `Unit: ${exp.unit}\n`;
+      report += `Aim : ${exp.aim}\n`;
+      report += `Commands Covered: ${exp.commandsCovered.join(', ')}\n`;
+      report += `Status: ${doneCount} of ${expTasks.length} tasks completed\n`;
+      report += `Tasks Breakdown:\n`;
+
+      expTasks.forEach((t) => {
+        const isDone = completedTasks.includes(t.id);
+        report += `  - [${isDone ? 'COMPLETED' : 'PENDING'}] ${t.title}\n`;
+        report += `    Command: ${t.commandHint}\n`;
+      });
+      report += `--------------------------------------------------------------------------------\n`;
+    });
+
+    report += `
+================================================================================
+FACULTY VERIFICATION & SIGN-OFF
+================================================================================
+Performance Grade: [    ]
+Lab Instructor Signature: _______________________
+Date: ________________________
+System Timestamp Verification: ${new Date().toISOString()}
+================================================================================
+`;
+
+    const blob = new Blob([report], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `LPU_CSE65D_OS_Lab_Report_${regNo}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="flex flex-col h-full bg-stone-900 text-stone-200 select-text overflow-hidden text-xs">
-      {/* Top Header & Navigation */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-stone-950 border-b border-stone-800">
-        <div className="flex items-center gap-2">
-          <GraduationCap className="w-5 h-5 text-orange-500" />
+      {/* Top Banner: LPU CSE65D Lab Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-stone-950 border-b border-stone-800 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-orange-600/20 border border-orange-500/40 flex items-center justify-center text-orange-400">
+            <GraduationCap className="w-5 h-5" />
+          </div>
           <div>
-            <h2 className="font-bold text-stone-100 text-sm">Linux Practice & Learning Lab</h2>
-            <p className="text-[11px] text-stone-400">Interactive Linux challenges and certifications</p>
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold text-stone-100 text-sm tracking-wide">
+                LPU CSE65D: Operating Systems Laboratory
+              </h2>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-500/10 text-teal-400 border border-teal-500/30">
+                Session 2026–27
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-stone-800 text-stone-300 border border-stone-700">
+                Debian 12 Kernel
+              </span>
+            </div>
+            <p className="text-[11px] text-stone-400 mt-0.5">
+              Genuine Linux Environment • Real System Calls, Files & Shell Practicals
+            </p>
           </div>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex items-center gap-1 bg-stone-900 p-0.5 rounded-lg border border-stone-800">
+        {/* Overall Progress & Report Action */}
+        <div className="flex items-center gap-4">
+          <div className="text-right hidden sm:block">
+            <div className="text-[11px] text-stone-400 font-medium">Syllabus Progress</div>
+            <div className="text-xs font-bold text-orange-400">
+              {completedTasks.length} / {totalTasks} Tasks ({progressPercent}%)
+            </div>
+          </div>
+
+          <div className="w-24 h-2 bg-stone-800 rounded-full overflow-hidden hidden sm:block border border-stone-700">
+            <div
+              className="h-full bg-gradient-to-r from-orange-500 to-teal-400 transition-all duration-300"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+
           <button
-            onClick={() => setActiveTab('lessons')}
-            className={`px-3 py-1 rounded-md transition-colors ${
-              activeTab === 'lessons'
-                ? 'bg-orange-600 text-white font-medium'
-                : 'text-stone-400 hover:text-stone-200'
-            }`}
+            onClick={() => setActiveTab('report')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-semibold text-xs shadow-md transition-all"
           >
-            Practical Tasks
+            <Download className="w-3.5 h-3.5" />
+            <span>Lab Report</span>
           </button>
+
           <button
-            onClick={() => setActiveTab('quiz')}
-            className={`px-3 py-1 rounded-md transition-colors ${
-              activeTab === 'quiz'
-                ? 'bg-orange-600 text-white font-medium'
-                : 'text-stone-400 hover:text-stone-200'
-            }`}
+            onClick={handleResetProgress}
+            title="Reset progress"
+            className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors"
           >
-            Linux MCQs Quiz
+            <RotateCcw className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {activeTab === 'lessons' ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Progress Banner */}
-          <div className="px-4 py-3 bg-stone-950/60 border-b border-stone-800 flex items-center justify-between gap-4">
-            <div className="flex-1 max-w-md">
-              <div className="flex justify-between text-xs mb-1.5 font-medium">
-                <span className="text-stone-300">Lab Completion Progress</span>
-                <span className="text-orange-400 font-mono">
-                  {completedTasks.length} / {totalTasks} tasks ({progressPercent}%)
-                </span>
-              </div>
-              <div className="w-full h-2 bg-stone-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-orange-500 transition-all duration-500 rounded-full"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Tier Filters */}
-            <div className="flex items-center gap-1">
-              {(['all', 'beginner', 'intermediate', 'advanced'] as const).map((tier) => (
-                <button
-                  key={tier}
-                  onClick={() => setSelectedTier(tier)}
-                  className={`px-2.5 py-1 rounded capitalize text-[11px] transition-colors ${
-                    selectedTier === tier
-                      ? 'bg-stone-800 text-white font-semibold'
-                      : 'text-stone-400 hover:text-stone-200'
-                  }`}
-                >
-                  {tier}
-                </button>
-              ))}
-
-              <button
-                onClick={handleResetProgress}
-                title="Reset lab progress"
-                className="p-1 rounded text-stone-500 hover:text-stone-300 hover:bg-stone-800 ml-2"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-            </div>
+      {/* Main Workspace: Left Sidebar + Right Experiment Workspace */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Syllabus Navigator */}
+        <div className="w-64 bg-stone-950/80 border-r border-stone-800/80 flex flex-col shrink-0 overflow-y-auto">
+          <div className="p-3 text-[11px] font-bold text-stone-400 uppercase tracking-wider border-b border-stone-800/60">
+            Official Experiments (1–9)
           </div>
 
-          {/* Lessons List */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {filteredLessons.map((lesson) => (
-              <div
-                key={lesson.id}
-                className="bg-stone-950/70 border border-stone-800 rounded-lg p-4 space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
-                        lesson.tier === 'beginner'
-                          ? 'bg-emerald-500/15 text-emerald-400'
-                          : lesson.tier === 'intermediate'
-                          ? 'bg-blue-500/15 text-blue-400'
-                          : 'bg-purple-500/15 text-purple-400'
-                      }`}
-                    >
-                      {lesson.tier}
-                    </span>
-                    <h3 className="font-semibold text-stone-100 text-sm">{lesson.title}</h3>
+          <div className="p-2 space-y-1">
+            {LPU_CSE65D_EXPERIMENTS.map((exp) => {
+              const isSelected = exp.id === selectedExpId;
+              const expDoneCount = exp.tasks.filter((t) => completedTasks.includes(t.id)).length;
+              const isComplete = expDoneCount === exp.tasks.length;
+
+              return (
+                <button
+                  key={exp.id}
+                  onClick={() => setSelectedExpId(exp.id)}
+                  className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start gap-2.5 ${
+                    isSelected
+                      ? 'bg-orange-500/15 border border-orange-500/40 text-stone-100 shadow-sm'
+                      : 'hover:bg-stone-900/60 border border-transparent text-stone-400 hover:text-stone-200'
+                  }`}
+                >
+                  <div
+                    className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold ${
+                      isComplete
+                        ? 'bg-teal-500 text-white'
+                        : isSelected
+                        ? 'bg-orange-500 text-white'
+                        : 'bg-stone-800 text-stone-400'
+                    }`}
+                  >
+                    {isComplete ? <Check className="w-3 h-3" /> : exp.expNumber}
                   </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold truncate leading-tight">
+                      Exp {exp.expNumber}: {exp.title}
+                    </div>
+                    <div className="text-[10px] text-stone-500 truncate mt-0.5">
+                      {expDoneCount}/{exp.tasks.length} Completed
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right Active Experiment Content */}
+        <div className="flex-1 flex flex-col overflow-y-auto bg-stone-900/90">
+          {/* Experiment Navigation Tabs */}
+          <div className="flex items-center gap-2 px-6 pt-3 border-b border-stone-800 bg-stone-950/40">
+            <button
+              onClick={() => setActiveTab('practicals')}
+              className={`px-4 py-2 font-semibold text-xs border-b-2 transition-all flex items-center gap-1.5 ${
+                activeTab === 'practicals'
+                  ? 'border-orange-500 text-orange-400'
+                  : 'border-transparent text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              <span>Practical Tasks ({activeExp.tasks.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('theory')}
+              className={`px-4 py-2 font-semibold text-xs border-b-2 transition-all flex items-center gap-1.5 ${
+                activeTab === 'theory'
+                  ? 'border-orange-500 text-orange-400'
+                  : 'border-transparent text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>Theory & Architecture</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('viva')}
+              className={`px-4 py-2 font-semibold text-xs border-b-2 transition-all flex items-center gap-1.5 ${
+                activeTab === 'viva'
+                  ? 'border-orange-500 text-orange-400'
+                  : 'border-transparent text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>Viva Voce Prep ({activeExp.vivaQuestions.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('report')}
+              className={`px-4 py-2 font-semibold text-xs border-b-2 transition-all flex items-center gap-1.5 ${
+                activeTab === 'report'
+                  ? 'border-orange-500 text-orange-400'
+                  : 'border-transparent text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Download Lab Report</span>
+            </button>
+          </div>
+
+          {/* Main Body */}
+          <div className="p-6 space-y-6 flex-1">
+            {/* Experiment Title Card */}
+            <div className="bg-stone-950/70 border border-stone-800 rounded-2xl p-5 shadow-lg">
+              <div className="flex items-center gap-2 text-[11px] font-semibold text-orange-400 uppercase tracking-wider mb-1">
+                <span>{activeExp.unit}</span>
+              </div>
+              <h1 className="text-base sm:text-lg font-bold text-stone-100">
+                Experiment {activeExp.expNumber}: {activeExp.title}
+              </h1>
+
+              <div className="mt-2 text-xs text-stone-300 leading-relaxed">
+                <span className="font-semibold text-stone-200">Aim: </span>
+                {activeExp.aim}
+              </div>
+
+              {/* Commands Covered Pills */}
+              <div className="mt-3 flex flex-wrap gap-1.5 items-center">
+                <span className="text-[11px] text-stone-500 font-medium mr-1">Commands:</span>
+                {activeExp.commandsCovered.map((cmd) => (
+                  <span
+                    key={cmd}
+                    className="px-2 py-0.5 rounded-md bg-stone-800/90 border border-stone-700/80 font-mono text-[11px] text-teal-300 font-semibold"
+                  >
+                    {cmd}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Tab: Practicals */}
+            {activeTab === 'practicals' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-stone-200 text-sm">Step-by-Step Practical Procedure</h3>
+                  <span className="text-xs text-stone-400">
+                    Execute each command in the real Linux terminal and verify.
+                  </span>
                 </div>
 
-                <p className="text-stone-400 text-xs">{lesson.description}</p>
-
-                {/* Tasks inside lesson */}
-                <div className="space-y-2 pt-1">
-                  {lesson.tasks.map((task) => {
+                <div className="space-y-3">
+                  {activeExp.tasks.map((task, idx) => {
                     const isDone = completedTasks.includes(task.id);
+                    const isVerifying = verifyingTaskId === task.id;
+                    const feedback = taskFeedback[task.id];
+
                     return (
                       <div
                         key={task.id}
-                        className={`p-3 rounded-md border transition-all ${
+                        className={`border rounded-xl p-4 transition-all ${
                           isDone
-                            ? 'bg-emerald-950/20 border-emerald-800/40'
-                            : 'bg-stone-900 border-stone-800'
+                            ? 'bg-teal-950/20 border-teal-500/40 shadow-sm'
+                            : 'bg-stone-950/50 border-stone-800 hover:border-stone-700'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-start gap-2.5">
-                            {isDone ? (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                            ) : (
-                              <Circle className="w-4 h-4 text-stone-600 shrink-0 mt-0.5" />
-                            )}
+                            <div
+                              className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-xs ${
+                                isDone
+                                  ? 'bg-teal-500 text-white font-bold'
+                                  : 'bg-stone-800 text-stone-400 font-semibold'
+                              }`}
+                            >
+                              {isDone ? <Check className="w-3 h-3" /> : idx + 1}
+                            </div>
                             <div>
-                              <h4 className="font-medium text-stone-200 text-xs">{task.title}</h4>
-                              <p className="text-stone-400 text-[11px] mt-0.5">{task.instruction}</p>
+                              <h4 className="font-bold text-stone-100 text-xs sm:text-sm">
+                                {task.title}
+                              </h4>
+                              <p className="text-xs text-stone-300 mt-1 leading-relaxed">
+                                {task.instruction}
+                              </p>
                             </div>
                           </div>
 
+                          {isDone && (
+                            <span className="px-2 py-0.5 rounded-full bg-teal-500/20 border border-teal-500/40 text-teal-300 text-[10px] font-semibold flex items-center gap-1 shrink-0">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Completed</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Command Box */}
+                        <div className="mt-3.5 bg-stone-900 border border-stone-800 rounded-lg p-2.5 flex items-center justify-between gap-3 font-mono text-xs">
+                          <span className="text-teal-300 truncate select-all">{task.commandHint}</span>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            {onRunInTerminal && (
-                              <button
-                                onClick={() => onRunInTerminal(`${task.commandHint}\n`)}
-                                className="flex items-center gap-1 px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-[11px] transition-colors"
-                                title="Run hint in terminal"
-                              >
-                                <Terminal className="w-3 h-3 text-orange-400" />
-                                <span>Try: {task.commandHint}</span>
-                              </button>
-                            )}
+                            <button
+                              onClick={() => handleCopy(task.commandHint, task.id)}
+                              title="Copy command"
+                              className="p-1 rounded hover:bg-stone-800 text-stone-400 hover:text-stone-200 transition-colors"
+                            >
+                              {copiedCmd === task.id ? <Check className="w-3.5 h-3.5 text-teal-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+
+                            <button
+                              onClick={() => handleRunCommand(task.commandHint)}
+                              title="Run live in terminal"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded bg-orange-600 hover:bg-orange-500 text-white text-[11px] font-semibold transition-all shadow-sm"
+                            >
+                              <Play className="w-3 h-3 fill-current" />
+                              <span>Run in Terminal</span>
+                            </button>
 
                             <button
                               onClick={() => handleVerifyTask(task)}
-                              disabled={verifyingTaskId === task.id || isDone}
-                              className={`flex items-center gap-1 px-2.5 py-1 rounded font-medium text-[11px] transition-colors ${
+                              disabled={isVerifying}
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-all border ${
                                 isDone
-                                  ? 'bg-emerald-900/40 text-emerald-400 cursor-default'
-                                  : 'bg-orange-600 hover:bg-orange-500 text-white'
+                                  ? 'bg-stone-800 border-stone-700 text-stone-300 hover:bg-stone-700'
+                                  : 'bg-teal-600 border-teal-500 hover:bg-teal-500 text-white'
                               }`}
                             >
-                              <Zap className="w-3 h-3" />
-                              <span>
-                                {verifyingTaskId === task.id
-                                  ? 'Verifying...'
-                                  : isDone
-                                  ? 'Verified'
-                                  : 'Verify'}
-                              </span>
+                              {isVerifying ? (
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Zap className="w-3 h-3" />
+                              )}
+                              <span>{isVerifying ? 'Checking...' : isDone ? 'Re-verify' : 'Verify'}</span>
                             </button>
                           </div>
                         </div>
 
-                        {verificationFeedback[task.id] && (
+                        {/* Verification Output / Feedback */}
+                        {feedback && (
                           <div
-                            className={`mt-2 text-[11px] font-mono p-1.5 rounded ${
-                              verificationFeedback[task.id].includes('passed') ||
-                              verificationFeedback[task.id].includes('completed')
-                                ? 'bg-emerald-950/40 text-emerald-300'
-                                : 'bg-red-950/40 text-red-300'
+                            className={`mt-2.5 p-2 rounded-lg text-xs font-mono border ${
+                              feedback.passed
+                                ? 'bg-teal-950/40 border-teal-500/50 text-teal-200'
+                                : 'bg-rose-950/40 border-rose-500/50 text-rose-200'
                             }`}
                           >
-                            {verificationFeedback[task.id]}
+                            <div className="font-bold flex items-center gap-1">
+                              {feedback.passed ? <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" /> : '✖'}
+                              <span>{feedback.message}</span>
+                            </div>
+                            {feedback.output && (
+                              <div className="mt-1 text-[11px] text-stone-300 bg-black/40 p-1.5 rounded overflow-x-auto whitespace-pre-wrap">
+                                {feedback.output}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     );
                   })}
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        /* Quiz Tab */
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <div className="bg-stone-950/60 p-4 rounded-lg border border-stone-800 flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-stone-100 text-sm">Linux Knowledge Check</h3>
-              <p className="text-stone-400 text-xs mt-0.5">
-                Answer these core Unix questions to test your terminal and system knowledge.
-              </p>
-            </div>
-            {submittedQuiz && (
-              <div className="flex items-center gap-2 bg-stone-900 px-3 py-1.5 rounded border border-stone-800">
-                <Award className="w-4 h-4 text-orange-400" />
-                <span className="font-bold text-stone-100">
-                  Score: {quizScore} / {LINUX_QUIZ.length}
-                </span>
-              </div>
-            )}
-          </div>
 
-          <div className="space-y-4">
-            {LINUX_QUIZ.map((q, idx) => (
-              <div
-                key={q.id}
-                className="bg-stone-950/70 border border-stone-800 rounded-lg p-4 space-y-3"
-              >
-                <div className="font-medium text-stone-200 text-xs">
-                  <span className="text-orange-400 font-bold mr-2">Q{idx + 1}.</span>
-                  {q.question}
-                </div>
-
-                <div className="space-y-1.5 pl-4">
-                  {q.options.map((opt, optIdx) => {
-                    const isSelected = quizAnswers[q.id] === optIdx;
-                    const isCorrect = q.correctIndex === optIdx;
-
-                    let btnClass = 'border-stone-800 hover:bg-stone-850 text-stone-300';
-                    if (submittedQuiz) {
-                      if (isCorrect) {
-                        btnClass = 'bg-emerald-950/40 border-emerald-600 text-emerald-300';
-                      } else if (isSelected && !isCorrect) {
-                        btnClass = 'bg-red-950/40 border-red-600 text-red-300';
-                      }
-                    } else if (isSelected) {
-                      btnClass = 'bg-orange-600/20 border-orange-500 text-white';
-                    }
-
-                    return (
+                {/* Sample Script if available */}
+                {activeExp.sampleScript && (
+                  <div className="mt-6 bg-stone-950 border border-stone-800 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5 font-bold text-stone-200">
+                        <FileCode className="w-4 h-4 text-orange-400" />
+                        <span>Sample Script Implementation</span>
+                      </div>
                       <button
-                        key={optIdx}
-                        onClick={() => handleAnswerSelect(q.id, optIdx)}
-                        className={`w-full text-left p-2.5 rounded border transition-colors flex items-center gap-2.5 text-xs ${btnClass}`}
+                        onClick={() => handleCopy(activeExp.sampleScript || '', 'sample-script')}
+                        className="flex items-center gap-1 text-[11px] text-stone-400 hover:text-stone-200"
                       >
-                        <span className="w-5 h-5 rounded-full border border-stone-700 flex items-center justify-center font-mono text-[10px] shrink-0">
-                          {String.fromCharCode(65 + optIdx)}
-                        </span>
-                        <span>{opt}</span>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy Script</span>
                       </button>
-                    );
-                  })}
-                </div>
-
-                {submittedQuiz && (
-                  <div className="p-3 bg-stone-900 rounded border border-stone-800 text-[11px] text-stone-300">
-                    <span className="font-semibold text-orange-400 block mb-0.5">Explanation:</span>
-                    {q.explanation}
+                    </div>
+                    <pre className="bg-stone-900/90 border border-stone-800 p-3 rounded-lg font-mono text-[11px] text-stone-300 overflow-x-auto whitespace-pre">
+                      {activeExp.sampleScript}
+                    </pre>
                   </div>
                 )}
               </div>
-            ))}
-          </div>
+            )}
 
-          {/* Quiz Action Button */}
-          <div className="flex justify-end pt-2 pb-6">
-            {!submittedQuiz ? (
-              <button
-                onClick={() => setSubmittedQuiz(true)}
-                className="px-4 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold text-xs shadow transition-colors"
-              >
-                Submit Answers & View Explanations
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  setSubmittedQuiz(false);
-                  setQuizAnswers({});
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-xs transition-colors"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Retake Quiz</span>
-              </button>
+            {/* Tab: Theory & Architecture */}
+            {activeTab === 'theory' && (
+              <div className="space-y-4">
+                <div className="bg-stone-950/70 border border-stone-800 rounded-xl p-5 space-y-3">
+                  <h3 className="font-bold text-stone-100 text-sm">Operating System Architecture & Theory</h3>
+                  <p className="text-xs text-stone-300 leading-relaxed whitespace-pre-line">
+                    {activeExp.theory}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Tab: Viva Voce Prep */}
+            {activeTab === 'viva' && (
+              <div className="space-y-3">
+                <h3 className="font-bold text-stone-200 text-sm">Viva Voce Questions & Model Answers</h3>
+                <div className="space-y-3">
+                  {activeExp.vivaQuestions.map((v, i) => (
+                    <div key={i} className="bg-stone-950/70 border border-stone-800 rounded-xl p-4 space-y-2">
+                      <div className="font-semibold text-orange-400 text-xs sm:text-sm">
+                        Q{i + 1}: {v.q}
+                      </div>
+                      <div className="text-xs text-stone-300 leading-relaxed pl-2 border-l-2 border-teal-500/50">
+                        {v.a}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tab: Report Generator */}
+            {activeTab === 'report' && (
+              <div className="bg-stone-950/70 border border-stone-800 rounded-2xl p-6 space-y-5 max-w-2xl">
+                <div>
+                  <h3 className="font-bold text-stone-100 text-base">Generate LPU CSE65D Laboratory Record</h3>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Enter your academic credentials to compile and download your official Linux practical submission report.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[11px] font-semibold text-stone-300 mb-1 block">Student Name</label>
+                    <input
+                      type="text"
+                      value={studentName}
+                      onChange={(e) => setStudentName(e.target.value)}
+                      className="w-full px-3 py-2 bg-stone-900 border border-stone-700 rounded-lg text-stone-100 text-xs outline-none focus:border-teal-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-stone-300 mb-1 block">Registration Number</label>
+                    <input
+                      type="text"
+                      value={regNo}
+                      onChange={(e) => setRegNo(e.target.value)}
+                      className="w-full px-3 py-2 bg-stone-900 border border-stone-700 rounded-lg text-stone-100 text-xs outline-none focus:border-teal-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-stone-300 mb-1 block">Section</label>
+                    <input
+                      type="text"
+                      value={section}
+                      onChange={(e) => setSection(e.target.value)}
+                      className="w-full px-3 py-2 bg-stone-900 border border-stone-700 rounded-lg text-stone-100 text-xs outline-none focus:border-teal-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-stone-300 mb-1 block">Roll Number</label>
+                    <input
+                      type="text"
+                      value={rollNo}
+                      onChange={(e) => setRollNo(e.target.value)}
+                      className="w-full px-3 py-2 bg-stone-900 border border-stone-700 rounded-lg text-stone-100 text-xs outline-none focus:border-teal-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-stone-800 flex items-center justify-between">
+                  <div className="text-xs text-stone-400">
+                    Tasks Audited: <span className="font-bold text-teal-400">{completedTasks.length} / {totalTasks}</span>
+                  </div>
+
+                  <button
+                    onClick={handleDownloadReport}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow-lg transition-all"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download LPU Lab Report (.txt)</span>
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

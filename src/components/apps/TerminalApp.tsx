@@ -10,15 +10,13 @@ import {
   ZoomOut,
   X,
   Check,
+  RefreshCw,
 } from 'lucide-react';
-import { CommandResult, ShellSession } from '../../services/shellService';
-import { vfsService } from '../../services/vfsService';
 
-interface TerminalTabState {
+interface TerminalTab {
   id: string;
   title: string;
-  shell: ShellSession;
-  history: string[];
+  cwd: string;
 }
 
 interface TerminalAppProps {
@@ -27,64 +25,38 @@ interface TerminalAppProps {
 }
 
 export const TerminalApp: React.FC<TerminalAppProps> = ({ initialCommand }) => {
-  const terminalRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
 
-  // Tabs state
-  const [tabs, setTabs] = useState<TerminalTabState[]>([
+  const [tabs, setTabs] = useState<TerminalTab[]>([
     {
       id: 'tab-1',
-      title: 'sheikh@linux:~',
-      shell: new ShellSession('sheikh', '/home/sheikh'),
-      history: [],
+      title: 'unigrova@user: ~',
+      cwd: '/home/unigrova',
     },
   ]);
   const [activeTabId, setActiveTabId] = useState<string>('tab-1');
   const [fontSize, setFontSize] = useState<number>(14);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
 
-  // State refs for terminal input processing
-  const currentLineRef = useRef<string>('');
-  const cursorPosRef = useRef<number>(0);
-  const historyIdxRef = useRef<number>(-1);
+  // Reference for currently active tab
   const activeTabIdRef = useRef<string>(activeTabId);
-  const tabsRef = useRef<TerminalTabState[]>(tabs);
-  const pendingPasswordCallbackRef = useRef<((password: string) => CommandResult) | null>(null);
-  const passwordInputRef = useRef<string>('');
-
   activeTabIdRef.current = activeTabId;
-  tabsRef.current = tabs;
 
-  const getActiveTab = (): TerminalTabState => {
-    return (
-      tabsRef.current.find((t) => t.id === activeTabIdRef.current) || tabsRef.current[0]
-    );
-  };
-
-  const quickCommands = [
-    { label: 'whoami', cmd: 'whoami' },
-    { label: 'pwd', cmd: 'pwd' },
-    { label: 'ls -la', cmd: 'ls -la' },
-    { label: 'uname -a', cmd: 'uname -a' },
-    { label: 'gcc --version', cmd: 'gcc --version' },
-    { label: 'python3 --version', cmd: 'python3 --version' },
-    { label: 'sudo whoami', cmd: 'sudo whoami' },
-    { label: 'free -m', cmd: 'free -m' },
-    { label: 'df -h', cmd: 'df -h' },
-    { label: 'tree ~', cmd: 'tree ~' },
-  ];
-
-  // Initialize xterm
+  // Initialize and connect terminal session
   useEffect(() => {
-    if (!terminalRef.current) return;
+    if (!containerRef.current) return;
 
+    // Create xterm terminal instance
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'DejaVu Sans Mono', monospace",
       fontSize: fontSize,
       theme: {
-        background: '#1c1917', // stone-900
+        background: '#1c1917', // stone-900 Ubuntu style dark
         foreground: '#f5f5f4', // stone-100
         cursor: '#f97316', // orange-500
         cursorAccent: '#1c1917',
@@ -107,355 +79,152 @@ export const TerminalApp: React.FC<TerminalAppProps> = ({ initialCommand }) => {
         brightWhite: '#fafaf9',
       },
       convertEol: true,
-      scrollback: 5000,
+      scrollback: 10000,
       cursorStyle: 'block',
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.open(terminalRef.current);
+    term.open(containerRef.current);
     fitAddon.fit();
 
     termInstance.current = term;
     fitAddonRef.current = fitAddon;
-
-    // Welcome banner and initial prompt
-    term.writeln('\x1b[1;38;5;208mUniGrova Linux Lab – Real Linux Simulator\x1b[0m');
-    term.writeln('\x1b[90mLinux version 5.15.0-107-generic (x86_64) · Connected as sheikh@linux\x1b[0m');
-    term.writeln('\x1b[90mType "help" for command list or "sudo -i" for root shell\x1b[0m');
-    term.writeln('');
-
-    const activeTab = getActiveTab();
-    term.write(activeTab.shell.getPrompt());
-
-    // Focus automatically
     term.focus();
 
-    // Setup input listener
+    // Establish WebSocket connection to backend real PTY session
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/api/terminal/ws?tabId=${activeTabId}&cols=${term.cols}&rows=${term.rows}&cwd=/home/unigrova&user=unigrova`;
+
+    let socket: WebSocket | null = null;
+    let isTermDisposed = false;
+
+    const connectWebSocket = () => {
+      try {
+        socket = new WebSocket(wsUrl);
+        socketRef.current = socket;
+        socket.binaryType = 'arraybuffer';
+
+        socket.onopen = () => {
+          setIsConnected(true);
+          // Send initial size
+          socket?.send(
+            JSON.stringify({
+              type: 'resize',
+              cols: term.cols,
+              rows: term.rows,
+            })
+          );
+
+          if (initialCommand) {
+            setTimeout(() => {
+              socket?.send(
+                JSON.stringify({
+                  type: 'stdin',
+                  data: initialCommand + '\r',
+                })
+              );
+            }, 400);
+          }
+        };
+
+        socket.onmessage = (event) => {
+          if (isTermDisposed) return;
+          if (typeof event.data === 'string') {
+            term.write(event.data);
+          } else if (event.data instanceof ArrayBuffer) {
+            const text = new TextDecoder('utf-8').decode(event.data);
+            term.write(text);
+          }
+        };
+
+        socket.onclose = () => {
+          setIsConnected(false);
+        };
+
+        socket.onerror = () => {
+          setIsConnected(false);
+        };
+      } catch (err) {
+        console.error('Terminal WebSocket connection failed:', err);
+      }
+    };
+
+    connectWebSocket();
+
+    // Forward keystrokes directly to bash PTY session
     const onDataDisposable = term.onData((data) => {
-      handleTerminalInput(data);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'stdin', data }));
+      }
     });
 
-    // Handle resize
+    // Forward terminal resize events
+    const onResizeDisposable = term.onResize(({ cols, rows }) => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+      }
+    });
+
+    // Live resize observer for window responsiveness
     const resizeObserver = new ResizeObserver(() => {
       try {
-        fitAddon.fit();
+        if (containerRef.current && fitAddonRef.current) {
+          fitAddonRef.current.fit();
+        }
       } catch {}
     });
-    resizeObserver.observe(terminalRef.current);
+    resizeObserver.observe(containerRef.current);
 
-    if (initialCommand) {
-      setTimeout(() => {
-        executeCommandString(initialCommand);
-      }, 300);
-    }
+    // Keep focus when clicking anywhere in terminal area
+    const handleContainerClick = () => {
+      term.focus();
+    };
+    const el = containerRef.current;
+    el.addEventListener('click', handleContainerClick);
 
     return () => {
-      onDataDisposable.dispose();
+      isTermDisposed = true;
+      el.removeEventListener('click', handleContainerClick);
       resizeObserver.disconnect();
+      onDataDisposable.dispose();
+      onResizeDisposable.dispose();
+
+      if (socket) {
+        socket.close();
+        socketRef.current = null;
+      }
       term.dispose();
       termInstance.current = null;
+      fitAddonRef.current = null;
     };
-  }, []);
+  }, [activeTabId]);
 
-  // Update font size when changed
-  useEffect(() => {
-    if (termInstance.current && fitAddonRef.current) {
-      termInstance.current.options.fontSize = fontSize;
-      try {
+  // Adjust font size dynamically
+  const handleZoomIn = () => {
+    if (fontSize < 24) {
+      const newSize = fontSize + 2;
+      setFontSize(newSize);
+      if (termInstance.current && fitAddonRef.current) {
+        termInstance.current.options.fontSize = newSize;
         fitAddonRef.current.fit();
-      } catch {}
-    }
-  }, [fontSize]);
-
-  const redrawCurrentLine = (prompt: string, line: string, cursorPos: number) => {
-    const term = termInstance.current;
-    if (!term) return;
-    // Carriage return, clear line, re-print prompt and line, reposition cursor
-    term.write('\r\x1b[K' + prompt + line);
-    const diff = line.length - cursorPos;
-    if (diff > 0) {
-      term.write(`\x1b[${diff}D`);
+      }
     }
   };
 
-  const updateTabTitleForShell = (tab: TerminalTabState) => {
-    const currentCwd = tab.shell.getCwd();
-    const currentUser = tab.shell.getUser();
-    const userHome = currentUser === 'root' ? '/root' : `/home/${currentUser}`;
-    let shortCwd: string;
-    if (currentCwd === userHome) {
-      shortCwd = '~';
-    } else if (currentCwd.startsWith(userHome + '/')) {
-      shortCwd = '~' + currentCwd.slice(userHome.length);
-    } else {
-      shortCwd = currentCwd;
-    }
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === tab.id ? { ...t, title: `${currentUser}@linux:${shortCwd}` } : t
-      )
-    );
-  };
-
-  const handleTerminalInput = (data: string) => {
-    const term = termInstance.current;
-    if (!term) return;
-    const tab = getActiveTab();
-    const prompt = tab.shell.getPrompt();
-
-    // Handling interactive password prompt (e.g. sudo or su)
-    if (pendingPasswordCallbackRef.current) {
-      if (data === '\r' || data === '\n') {
-        term.writeln('');
-        const enteredPassword = passwordInputRef.current;
-        passwordInputRef.current = '';
-        const callback = pendingPasswordCallbackRef.current;
-        pendingPasswordCallbackRef.current = null;
-
-        const result = callback(enteredPassword);
-        if (result.clearScreen) {
-          term.clear();
-        } else if (result.output) {
-          const formatted = result.output.replace(/\r?\n/g, '\r\n');
-          term.write(formatted);
-          if (!formatted.endsWith('\r\n')) {
-            term.writeln('');
-          }
-        }
-
-        updateTabTitleForShell(tab);
-        term.write(tab.shell.getPrompt());
-        return;
+  const handleZoomOut = () => {
+    if (fontSize > 10) {
+      const newSize = fontSize - 2;
+      setFontSize(newSize);
+      if (termInstance.current && fitAddonRef.current) {
+        termInstance.current.options.fontSize = newSize;
+        fitAddonRef.current.fit();
       }
-
-      if (data === '\x7f' || data === '\b') {
-        if (passwordInputRef.current.length > 0) {
-          passwordInputRef.current = passwordInputRef.current.slice(0, -1);
-        }
-        return;
-      }
-
-      if (data === '\x03') {
-        term.writeln('^C');
-        pendingPasswordCallbackRef.current = null;
-        passwordInputRef.current = '';
-        term.write(prompt);
-        return;
-      }
-
-      if (data.length === 1 && data.charCodeAt(0) >= 32) {
-        // Silently append without echoing to maintain Linux sudo security convention
-        passwordInputRef.current += data;
-      }
-      return;
-    }
-
-    // 1. Enter key
-    if (data === '\r' || data === '\n') {
-      term.writeln('');
-      const cmd = currentLineRef.current;
-      currentLineRef.current = '';
-      cursorPosRef.current = 0;
-      historyIdxRef.current = -1;
-
-      if (cmd.trim()) {
-        const result = tab.shell.execute(cmd);
-        if (result.clearScreen) {
-          term.clear();
-        } else if (result.needsPasswordPrompt) {
-          term.write(result.needsPasswordPrompt.prompt);
-          pendingPasswordCallbackRef.current = result.needsPasswordPrompt.onPassword;
-          passwordInputRef.current = '';
-          return;
-        } else if (result.output) {
-          // Format newlines as CRLF for xterm
-          const formatted = result.output.replace(/\r?\n/g, '\r\n');
-          term.write(formatted);
-          if (!formatted.endsWith('\r\n')) {
-            term.writeln('');
-          }
-        }
-      }
-
-      // Update tab title if cwd or user changed
-      updateTabTitleForShell(tab);
-
-      term.write(tab.shell.getPrompt());
-      return;
-    }
-
-    // 2. Backspace
-    if (data === '\x7f' || data === '\b') {
-      if (cursorPosRef.current > 0) {
-        const line = currentLineRef.current;
-        const pos = cursorPosRef.current;
-        currentLineRef.current = line.slice(0, pos - 1) + line.slice(pos);
-        cursorPosRef.current--;
-        redrawCurrentLine(prompt, currentLineRef.current, cursorPosRef.current);
-      }
-      return;
-    }
-
-    // 3. Ctrl+C (Interrupt)
-    if (data === '\x03') {
-      term.writeln('^C');
-      currentLineRef.current = '';
-      cursorPosRef.current = 0;
-      historyIdxRef.current = -1;
-      term.write(prompt);
-      return;
-    }
-
-    // 4. Ctrl+L (Clear screen)
-    if (data === '\x0c') {
-      term.clear();
-      term.write(prompt + currentLineRef.current);
-      return;
-    }
-
-    // 5. Arrow keys (ANSI escape sequences)
-    if (data === '\x1b[A') {
-      // Up Arrow: History backward
-      const history = tab.shell.getHistory();
-      if (history.length === 0) return;
-
-      if (historyIdxRef.current === -1) {
-        historyIdxRef.current = history.length - 1;
-      } else if (historyIdxRef.current > 0) {
-        historyIdxRef.current--;
-      }
-
-      const item = history[historyIdxRef.current] || '';
-      currentLineRef.current = item;
-      cursorPosRef.current = item.length;
-      redrawCurrentLine(prompt, item, cursorPosRef.current);
-      return;
-    }
-
-    if (data === '\x1b[B') {
-      // Down Arrow: History forward
-      const history = tab.shell.getHistory();
-      if (historyIdxRef.current !== -1) {
-        if (historyIdxRef.current < history.length - 1) {
-          historyIdxRef.current++;
-          const item = history[historyIdxRef.current];
-          currentLineRef.current = item;
-          cursorPosRef.current = item.length;
-          redrawCurrentLine(prompt, item, cursorPosRef.current);
-        } else {
-          historyIdxRef.current = -1;
-          currentLineRef.current = '';
-          cursorPosRef.current = 0;
-          redrawCurrentLine(prompt, '', 0);
-        }
-      }
-      return;
-    }
-
-    if (data === '\x1b[D') {
-      // Left Arrow
-      if (cursorPosRef.current > 0) {
-        cursorPosRef.current--;
-        term.write('\x1b[D');
-      }
-      return;
-    }
-
-    if (data === '\x1b[C') {
-      // Right Arrow
-      if (cursorPosRef.current < currentLineRef.current.length) {
-        cursorPosRef.current++;
-        term.write('\x1b[C');
-      }
-      return;
-    }
-
-    // 6. Tab completion
-    if (data === '\t') {
-      const line = currentLineRef.current;
-      const parts = line.split(' ');
-      const lastToken = parts[parts.length - 1];
-
-      // Auto-complete files in cwd
-      const entries = vfsService.readDir(tab.shell.getCwd());
-      const matches = entries.filter((e) => e.name.startsWith(lastToken));
-
-      if (matches.length === 1) {
-        const completion = matches[0].name.slice(lastToken.length) + (matches[0].isDirectory ? '/' : ' ');
-        currentLineRef.current += completion;
-        cursorPosRef.current += completion.length;
-        term.write(completion);
-      } else if (matches.length > 1) {
-        term.writeln('');
-        term.writeln(matches.map((m) => m.name).join('  '));
-        term.write(prompt + currentLineRef.current);
-      }
-      return;
-    }
-
-    // 7. Standard printable character input
-    if (data.length === 1 && data.charCodeAt(0) >= 32) {
-      const line = currentLineRef.current;
-      const pos = cursorPosRef.current;
-      currentLineRef.current = line.slice(0, pos) + data + line.slice(pos);
-      cursorPosRef.current++;
-      redrawCurrentLine(prompt, currentLineRef.current, cursorPosRef.current);
     }
   };
 
-  const executeCommandString = (cmd: string) => {
-    const term = termInstance.current;
-    if (!term) return;
-    const tab = getActiveTab();
-
-    currentLineRef.current = cmd;
-    term.write(cmd);
-    handleTerminalInput('\r');
-  };
-
-  const handleAddTab = () => {
-    const newId = `tab-${Date.now()}`;
-    const newTab: TerminalTabState = {
-      id: newId,
-      title: 'sheikh@linux:~',
-      shell: new ShellSession('sheikh', '/home/sheikh'),
-      history: [],
-    };
-    setTabs([...tabs, newTab]);
-    setActiveTabId(newId);
-
-    setTimeout(() => {
-      if (termInstance.current) {
-        termInstance.current.clear();
-        termInstance.current.writeln(`\x1b[1;38;5;208m--- Session Switched to New Shell (${newId}) ---\x1b[0m\r\n`);
-        termInstance.current.write(newTab.shell.getPrompt());
-        termInstance.current.focus();
-      }
-    }, 50);
-  };
-
-  const handleSelectTab = (tabId: string) => {
-    setActiveTabId(tabId);
-    const target = tabs.find((t) => t.id === tabId);
-    if (target && termInstance.current) {
-      termInstance.current.clear();
-      termInstance.current.writeln(`\x1b[1;38;5;208m--- Switched to ${target.title} ---\x1b[0m\r\n`);
-      termInstance.current.write(target.shell.getPrompt());
-      termInstance.current.focus();
-    }
-  };
-
-  const handleCloseTab = (tabId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (tabs.length === 1) return; // Keep at least one tab
-    const nextTabs = tabs.filter((t) => t.id !== tabId);
-    setTabs(nextTabs);
-    if (activeTabId === tabId) {
-      handleSelectTab(nextTabs[0].id);
-    }
-  };
-
+  // Copy selection from terminal
   const handleCopySelection = () => {
     if (termInstance.current) {
       const selection = termInstance.current.getSelection();
@@ -467,130 +236,151 @@ export const TerminalApp: React.FC<TerminalAppProps> = ({ initialCommand }) => {
     }
   };
 
+  // Clear terminal screen
   const handleClear = () => {
     if (termInstance.current) {
       termInstance.current.clear();
-      const tab = getActiveTab();
-      termInstance.current.write(tab.shell.getPrompt());
-      currentLineRef.current = '';
-      cursorPosRef.current = 0;
-      termInstance.current.focus();
+      // Send Ctrl+L to shell to refresh prompt
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ type: 'stdin', data: '\x0c' }));
+      }
+    }
+  };
+
+  // Reconnect shell
+  const handleReconnect = () => {
+    if (termInstance.current) {
+      termInstance.current.reset();
+    }
+    // Toggle active tab to trigger reconnection
+    const current = activeTabId;
+    setActiveTabId('');
+    setTimeout(() => setActiveTabId(current), 50);
+  };
+
+  // New tab
+  const handleNewTab = () => {
+    const newId = `tab-${Date.now()}`;
+    const newTab: TerminalTab = {
+      id: newId,
+      title: `unigrova@user: ~`,
+      cwd: '/home/unigrova',
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newId);
+  };
+
+  // Close tab
+  const handleCloseTab = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (tabs.length === 1) return; // Keep at least one tab
+    const nextTabs = tabs.filter((t) => t.id !== id);
+    setTabs(nextTabs);
+    if (activeTabId === id) {
+      setActiveTabId(nextTabs[nextTabs.length - 1].id);
     }
   };
 
   return (
-    <div
-      onClick={() => termInstance.current?.focus()}
-      className="flex flex-col h-full bg-stone-900 text-stone-200 select-text overflow-hidden"
-    >
-      {/* Terminal Title Bar & Tabs */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-stone-950 border-b border-stone-800 text-xs select-none">
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-          {tabs.map((tab) => (
-            <div
-              key={tab.id}
-              onClick={() => handleSelectTab(tab.id)}
-              className={`flex items-center gap-2 px-3 py-1 rounded cursor-pointer transition-colors ${
-                activeTabId === tab.id
-                  ? 'bg-stone-800 text-orange-400 font-medium'
-                  : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
-              }`}
-            >
-              <TermIcon className="w-3.5 h-3.5" />
-              <span>{tab.title}</span>
-              {tabs.length > 1 && (
-                <button
-                  onClick={(e) => handleCloseTab(tab.id, e)}
-                  className="hover:text-red-400 p-0.5 rounded"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-          ))}
+    <div className="flex flex-col h-full w-full bg-[#1c1917] text-stone-200 select-none overflow-hidden font-mono text-sm">
+      {/* Terminal Title Bar / Tabs Header */}
+      <div className="flex items-center justify-between bg-stone-900 border-b border-stone-800 px-3 py-1.5 shrink-0">
+        {/* Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeTabId;
+            return (
+              <div
+                key={tab.id}
+                onClick={() => setActiveTabId(tab.id)}
+                className={`group flex items-center gap-2 px-3 py-1 rounded text-xs transition cursor-pointer ${
+                  isActive
+                    ? 'bg-stone-800 text-stone-100 shadow-sm border border-stone-700/60'
+                    : 'text-stone-400 hover:bg-stone-800/50 hover:text-stone-200'
+                }`}
+              >
+                <TermIcon size={13} className={isActive ? 'text-orange-400' : 'text-stone-500'} />
+                <span className="truncate max-w-[140px] font-medium">{tab.title}</span>
+                {tabs.length > 1 && (
+                  <button
+                    onClick={(e) => handleCloseTab(tab.id, e)}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-stone-700 rounded text-stone-400 hover:text-stone-200"
+                    title="Close tab"
+                  >
+                    <X size={11} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
 
           <button
-            onClick={handleAddTab}
+            onClick={handleNewTab}
+            className="p-1 hover:bg-stone-800 text-stone-400 hover:text-stone-200 rounded transition"
             title="Open new terminal tab"
-            className="p-1 text-stone-400 hover:text-stone-200 hover:bg-stone-800 rounded transition-colors"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus size={14} />
           </button>
         </div>
 
-        {/* Controls */}
-        <div className="flex items-center gap-1 shrink-0">
-          <div className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded bg-stone-900 border border-stone-800 text-[11px] text-stone-400 mr-2 font-mono">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-            <span>ttyS0 · /bin/sh</span>
-          </div>
+        {/* Toolbar Controls */}
+        <div className="flex items-center gap-1 shrink-0 ml-2">
+          {/* Status Indicator */}
+          <div
+            className={`w-2 h-2 rounded-full mr-2 ${
+              isConnected ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-amber-500 animate-pulse'
+            }`}
+            title={isConnected ? 'Connected to Linux PTY' : 'Connecting to shell...'}
+          />
 
-          <button
-            onClick={() => setFontSize((prev) => Math.min(22, prev + 1))}
-            title="Increase font size"
-            className="p-1 text-stone-400 hover:text-stone-200 hover:bg-stone-800 rounded transition-colors"
-          >
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => setFontSize((prev) => Math.max(10, prev - 1))}
-            title="Decrease font size"
-            className="p-1 text-stone-400 hover:text-stone-200 hover:bg-stone-800 rounded transition-colors"
-          >
-            <ZoomOut className="w-3.5 h-3.5" />
-          </button>
           <button
             onClick={handleCopySelection}
+            className="p-1.5 hover:bg-stone-800 text-stone-400 hover:text-stone-200 rounded transition"
             title="Copy selection"
-            className="p-1 text-stone-400 hover:text-stone-200 hover:bg-stone-800 rounded transition-colors"
           >
-            {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {isCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
           </button>
+
           <button
             onClick={handleClear}
-            title="Clear Terminal (Ctrl+L)"
-            className="p-1 text-stone-400 hover:text-stone-200 hover:bg-stone-800 rounded transition-colors"
+            className="p-1.5 hover:bg-stone-800 text-stone-400 hover:text-stone-200 rounded transition"
+            title="Clear terminal (Ctrl+L)"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 size={14} />
+          </button>
+
+          <button
+            onClick={handleZoomIn}
+            className="p-1.5 hover:bg-stone-800 text-stone-400 hover:text-stone-200 rounded transition"
+            title="Increase font size"
+          >
+            <ZoomIn size={14} />
+          </button>
+
+          <button
+            onClick={handleZoomOut}
+            className="p-1.5 hover:bg-stone-800 text-stone-400 hover:text-stone-200 rounded transition"
+            title="Decrease font size"
+          >
+            <ZoomOut size={14} />
+          </button>
+
+          <button
+            onClick={handleReconnect}
+            className="p-1.5 hover:bg-stone-800 text-stone-400 hover:text-stone-200 rounded transition"
+            title="Reconnect shell session"
+          >
+            <RefreshCw size={14} />
           </button>
         </div>
-      </div>
-
-      {/* Quick Command Snippets Bar */}
-      <div className="flex items-center gap-1.5 px-3 py-1 bg-stone-950/60 border-b border-stone-800 text-[11px] text-stone-400 overflow-x-auto scrollbar-none select-none">
-        <span className="font-semibold text-stone-500 uppercase tracking-wider text-[10px] shrink-0">
-          Quick:
-        </span>
-        {quickCommands.map((qc) => (
-          <button
-            key={qc.label}
-            onClick={() => executeCommandString(qc.cmd)}
-            className="px-2 py-0.5 rounded bg-stone-800 hover:bg-orange-600 hover:text-white transition-colors shrink-0 font-mono text-stone-300"
-          >
-            {qc.label}
-          </button>
-        ))}
       </div>
 
       {/* Terminal Viewport */}
       <div
-        ref={terminalRef}
-        className="flex-1 w-full p-2 overflow-hidden bg-stone-900 cursor-text"
+        ref={containerRef}
+        className="flex-1 w-full h-full p-2 overflow-hidden bg-[#1c1917] cursor-text"
+        tabIndex={0}
       />
-
-      {/* Terminal Footer Info */}
-      <div className="flex items-center justify-between px-3 py-1 bg-stone-950 text-[11px] text-stone-400 border-t border-stone-800 font-mono select-none">
-        <div className="flex items-center gap-3">
-          <span>Linux 5.15.0 (x86_64)</span>
-          <span className="hidden sm:inline">·</span>
-          <span className="hidden sm:inline">Interactive POSIX Shell</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span>Ctrl+C (Interrupt)</span>
-          <span>·</span>
-          <span>Tab (Autocomplete)</span>
-        </div>
-      </div>
     </div>
   );
 };

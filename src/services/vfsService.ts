@@ -1,13 +1,13 @@
 /**
  * Virtual Filesystem (VFS) Service
  * Provides persistent POSIX-like hierarchical filesystem with permissions, directories,
- * user/group ownership (sheikh / root), and real-time synchronization between
+ * user/group ownership (unigrova / root), and real-time synchronization between
  * Terminal, File Manager, Text Editor, and IDE.
  */
 
 export interface VFSEntry {
   name: string;
-  path: string; // Normalized absolute path, e.g. "/home/sheikh/welcome.txt"
+  path: string; // Normalized absolute path, e.g. "/home/unigrova/welcome.txt"
   isDirectory: boolean;
   content?: string;
   size: number;
@@ -17,7 +17,7 @@ export interface VFSEntry {
   modified: string;
 }
 
-const STORAGE_KEY = 'unigrova_linux_vfs_v3';
+const STORAGE_KEY = 'unigrova_linux_vfs_v5';
 
 class VFSService {
   private files: Map<string, VFSEntry> = new Map();
@@ -30,11 +30,29 @@ class VFSService {
 
   private init() {
     this.loadFromStorage();
-    if (this.files.size === 0 || !this.files.has('/home/sheikh')) {
+    if (this.files.size === 0 || !this.files.has('/home/unigrova')) {
       this.populateDefaultFilesystem();
       this.saveToStorage();
     }
     this.isLoaded = true;
+    this.syncFromDisk('/home/unigrova');
+  }
+
+  public async syncFromDisk(dirPath: string = '/home/unigrova'): Promise<void> {
+    try {
+      const res = await fetch(`/api/fs/list?path=${encodeURIComponent(dirPath)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.items)) {
+          for (const item of data.items) {
+            this.files.set(item.path, item);
+          }
+          this.notify();
+        }
+      }
+    } catch {
+      // Backend not yet available, keep local VFS
+    }
   }
 
   private populateDefaultFilesystem() {
@@ -81,10 +99,13 @@ class VFSService {
     addDir('/');
     addDir('/root', 'drwx------', 'root', 'root');
     addDir('/home', 'drwxr-xr-x', 'root', 'root');
-    addDir('/home/sheikh', 'drwxr-xr-x', 'sheikh', 'sheikh');
-    addDir('/home/sheikh/Documents', 'drwxr-xr-x', 'sheikh', 'sheikh');
-    addDir('/home/sheikh/Downloads', 'drwxr-xr-x', 'sheikh', 'sheikh');
-    addDir('/home/sheikh/Projects', 'drwxr-xr-x', 'sheikh', 'sheikh');
+    addDir('/home/unigrova', 'drwxr-xr-x', 'unigrova', 'unigrova');
+    addDir('/home/unigrova/Desktop', 'drwxr-xr-x', 'unigrova', 'unigrova');
+    addDir('/home/unigrova/Documents', 'drwxr-xr-x', 'unigrova', 'unigrova');
+    addDir('/home/unigrova/Downloads', 'drwxr-xr-x', 'unigrova', 'unigrova');
+    addDir('/home/unigrova/Music', 'drwxr-xr-x', 'unigrova', 'unigrova');
+    addDir('/home/unigrova/Pictures', 'drwxr-xr-x', 'unigrova', 'unigrova');
+    addDir('/home/unigrova/Projects', 'drwxr-xr-x', 'unigrova', 'unigrova');
 
     addDir('/etc', 'drwxr-xr-x', 'root', 'root');
     addDir('/etc/apt', 'drwxr-xr-x', 'root', 'root');
@@ -101,11 +122,11 @@ class VFSService {
     addDir('/proc', 'dr-xr-xr-x', 'root', 'root');
     addDir('/sys', 'dr-xr-xr-x', 'root', 'root');
 
-    // /etc system files with sheikh user and sudoers
-    addFile('/etc/hostname', 'linux\n');
+    // /etc system files with unigrova user and sudoers
+    addFile('/etc/hostname', 'user\n');
     addFile(
       '/etc/hosts',
-      '127.0.0.1\tlocalhost\n127.0.1.1\tlinux\n::1\t\tlocalhost ip6-localhost ip6-loopback\n'
+      '127.0.0.1\tlocalhost\n127.0.1.1\tuser\n::1\t\tlocalhost ip6-localhost ip6-loopback\n'
     );
     addFile(
       '/etc/os-release',
@@ -113,15 +134,15 @@ class VFSService {
     );
     addFile(
       '/etc/passwd',
-      'root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\nsheikh:x:1000:1000:Sheikh,,,:/home/sheikh:/bin/bash\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n'
+      'root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\nunigrova:x:1000:1000:unigrova,,,:/home/unigrova:/bin/bash\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n'
     );
     addFile(
       '/etc/group',
-      'root:x:0:\nadm:x:4:sheikh\nsudo:x:27:sheikh\nsheikh:x:1000:\nnogroup:x:65534:\n'
+      'root:x:0:\nadm:x:4:unigrova\nsudo:x:27:unigrova\nunigrova:x:1000:\nnogroup:x:65534:\n'
     );
     addFile(
       '/etc/sudoers',
-      '# /etc/sudoers\nDefaults\tenv_reset\nDefaults\tmail_badpass\nroot\tALL=(ALL:ALL) ALL\n%sudo\tALL=(ALL:ALL) ALL\nsheikh\tALL=(ALL:ALL) ALL\n',
+      '# /etc/sudoers\nDefaults\tenv_reset\nDefaults\tmail_badpass\nroot\tALL=(ALL:ALL) ALL\n%sudo\tALL=(ALL:ALL) ALL\nunigrova\tALL=(ALL:ALL) ALL\n',
       '-r--r-----'
     );
 
@@ -156,52 +177,60 @@ class VFSService {
       'tree', 'file', 'stat', 'sort', 'uniq', 'wc', 'cut', 'tr', 'diff',
       'nano', 'vi', 'uptime', 'nice', 'renice', 'umask', 'which', 'whoami',
       'ping', 'ip', 'curl', 'wget', 'ssh', 'netstat', 'ss', 'history', 'help',
-      'man', 'gcc', 'g++', 'make', 'python3', 'apt', 'apt-get'
+      'man', 'gcc', 'g++', 'make', 'python3', 'python', 'apt', 'apt-get'
     ];
     for (const b of bins) {
       addFile(`/bin/${b}`, `#!/bin/sh\n# ELF 64-bit binary placeholder: ${b}\n`, '-rwxr-xr-x');
       addFile(`/usr/bin/${b}`, `#!/bin/sh\n# ELF 64-bit binary placeholder: ${b}\n`, '-rwxr-xr-x');
     }
 
-    // Default Home for Sheikh
+    // Default Home for unigrova
     addFile(
-      '/home/sheikh/welcome.txt',
-      '=======================================================\n  Welcome to UniGrova Linux Lab, Sheikh!  \n=======================================================\n\nYou are logged in as: sheikh (UID 1000)\nYour home directory is: /home/sheikh\n\nYou have sudo privileges enabled.\nTo run administrative commands, use: sudo <command>\n\nTry running:\n  whoami\n  pwd\n  mkdir test\n  cd test\n  touch hello.txt\n  echo "Hello Sheikh" > hello.txt\n  cat hello.txt\n  gcc --version\n  python3 --version\n  uname -a\n  tree /home/sheikh\n  history\n\nAll changes to files and directories persist across browser sessions.\n',
+      '/home/unigrova/Documents/welcome.txt',
+      '=======================================================\n  Welcome to UniGrova Linux Lab!  \n=======================================================\n\nYou are logged in as: unigrova (UID 1000)\nHostname: user\nYour home directory is: /home/unigrova\n\nYou have sudo privileges enabled.\nTo run administrative commands, use: sudo <command>\n\nTry running:\n  whoami\n  hostname\n  pwd\n  ls\n  mkdir test\n  cd test\n  touch hello.txt\n  echo "Hello UniGrova" > hello.txt\n  cat hello.txt\n  gcc --version\n  python3 --version\n  uname -a\n  tree /home/unigrova\n  history\n\nAll changes to files and directories persist across browser sessions.\n',
       '-rw-r--r--',
-      'sheikh',
-      'sheikh'
+      'unigrova',
+      'unigrova'
     );
 
     addFile(
-      '/home/sheikh/.bashrc',
+      '/home/unigrova/.bashrc',
       '# ~/.bashrc: executed by bash(1) for non-login shells.\nexport PS1="\\[\\033[01;32m\\]\\u@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ "\nalias ls="ls --color=auto"\nalias ll="ls -la"\nalias la="ls -A"\nalias l="ls -CF"\n',
       '-rw-r--r--',
-      'sheikh',
-      'sheikh'
+      'unigrova',
+      'unigrova'
     );
 
     addFile(
-      '/home/sheikh/.profile',
+      '/home/unigrova/.profile',
       '# ~/.profile: executed by Bourne-compatible login shells.\nif [ -n "$BASH_VERSION" ]; then\n    if [ -f "$HOME/.bashrc" ]; then\n        . "$HOME/.bashrc"\n    fi\nfi\nPATH="$HOME/bin:$HOME/.local/bin:$PATH"\n',
       '-rw-r--r--',
-      'sheikh',
-      'sheikh'
+      'unigrova',
+      'unigrova'
     );
 
     addFile(
-      '/home/sheikh/main.c',
-      '#include <stdio.h>\n#include <unistd.h>\n\nint main(void) {\n    printf("========================================\\n");\n    printf("  Hello Sheikh from real Linux C program!\\n");\n    printf("========================================\\n");\n    printf("Process PID: %d\\n", getpid());\n    return 0;\n}\n',
+      '/home/unigrova/Projects/main.c',
+      '#include <stdio.h>\n#include <unistd.h>\n\nint main(void) {\n    printf("========================================\\n");\n    printf("  Hello from real Linux C program!\\n");\n    printf("  User: unigrova @ Host: user\\n");\n    printf("========================================\\n");\n    printf("Process PID: %d\\n", getpid());\n    return 0;\n}\n',
       '-rw-r--r--',
-      'sheikh',
-      'sheikh'
+      'unigrova',
+      'unigrova'
     );
 
     addFile(
-      '/home/sheikh/script.sh',
-      '#!/bin/bash\n# System Health Script for Sheikh\necho "Hello Sheikh! Checking Linux System:"\nuname -a\ndate\nfree -h\ndf -h\necho "Status: All subsystems operational."\n',
+      '/home/unigrova/Projects/script.sh',
+      '#!/bin/bash\n# System Health Script for unigrova\necho "Checking Linux System Status:"\nuname -a\nhostname\ndate\nfree -h\ndf -h\necho "Status: All subsystems operational."\n',
       '-rwxr-xr-x',
-      'sheikh',
-      'sheikh'
+      'unigrova',
+      'unigrova'
+    );
+
+    addFile(
+      '/home/unigrova/Projects/app.py',
+      '# Python 3 demo script\nimport sys\nimport os\nimport platform\n\nprint("========================================")\nprint(f"Python: {sys.version.split()[0]}")\nprint(f"Platform: {platform.system()} {platform.machine()}")\nprint(f"User: unigrova | Host: user")\nprint(f"Working Directory: {os.getcwd()}")\nprint("========================================")\n',
+      '-rwxr-xr-x',
+      'unigrova',
+      'unigrova'
     );
 
     // Root folder items
@@ -216,6 +245,7 @@ class VFSService {
 
   private saveToStorage() {
     try {
+      if (typeof localStorage === 'undefined') return;
       const data: Record<string, VFSEntry> = {};
       this.files.forEach((v, k) => {
         data[k] = v;
@@ -228,6 +258,7 @@ class VFSService {
 
   private loadFromStorage() {
     try {
+      if (typeof localStorage === 'undefined') return;
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed: Record<string, VFSEntry> = JSON.parse(raw);
@@ -254,7 +285,7 @@ class VFSService {
   /**
    * Resolves paths against current working directory and user's home (~).
    */
-  public resolvePath(target: string, cwd: string = '/home/sheikh', userHome: string = '/home/sheikh'): string {
+  public resolvePath(target: string, cwd: string = '/home/unigrova', userHome: string = '/home/unigrova'): string {
     let raw = target.trim();
     if (!raw) return cwd;
 
@@ -332,8 +363,8 @@ class VFSService {
     filePath: string,
     content: string,
     permissions = '-rw-r--r--',
-    owner = 'sheikh',
-    group = 'sheikh'
+    owner = 'unigrova',
+    group = 'unigrova'
   ): boolean {
     const normalized = this.resolvePath(filePath, '/');
     if (normalized === '/') return false;
@@ -363,6 +394,14 @@ class VFSService {
     });
 
     this.notify();
+
+    // Sync to real Linux disk
+    fetch('/api/fs/write', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: normalized, content }),
+    }).catch(() => {});
+
     return true;
   }
 
@@ -370,8 +409,8 @@ class VFSService {
     dirPath: string,
     recursive = false,
     permissions = 'drwxr-xr-x',
-    owner = 'sheikh',
-    group = 'sheikh'
+    owner = 'unigrova',
+    group = 'unigrova'
   ): boolean {
     const normalized = this.resolvePath(dirPath, '/');
     if (normalized === '/') return true;
@@ -402,6 +441,14 @@ class VFSService {
     });
 
     this.notify();
+
+    // Sync directory to real Linux disk
+    fetch('/api/fs/mkdir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: normalized }),
+    }).catch(() => {});
+
     return true;
   }
 
@@ -432,6 +479,14 @@ class VFSService {
     }
 
     this.notify();
+
+    // Sync removal to real Linux disk
+    fetch('/api/fs/delete', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: normalized }),
+    }).catch(() => {});
+
     return true;
   }
 

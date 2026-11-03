@@ -36,46 +36,60 @@ export const SystemMonitorApp: React.FC = () => {
   ]);
   const [selectedPid, setSelectedPid] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
 
-  const fetchMetrics = () => {
+  const fetchMetrics = async () => {
     setIsLoading(true);
     try {
-      const freeRes = defaultShell.execute('free -m');
-      const freeLines = freeRes.output.split('\n');
-      for (const line of freeLines) {
-        if (line.includes('Mem:')) {
-          const parts = line.trim().split(/\s+/);
-          if (parts.length >= 3) {
-            const total = parseInt(parts[1], 10) || 128;
-            const used = parseInt(parts[2], 10) || 48;
-            setMemTotal(total);
-            setMemUsed(used);
+      const res = await fetch('/api/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: 'free -m && echo "---PS---" && ps -eo pid,user,stat,vsz,comm',
+          cwd: '/home/unigrova',
+          user: 'unigrova',
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const stdout = data.stdout || '';
+        const [freePart, psPart] = stdout.split('---PS---');
+
+        if (freePart) {
+          const freeLines = freePart.split('\n');
+          for (const line of freeLines) {
+            if (line.includes('Mem:')) {
+              const parts = line.trim().split(/\s+/);
+              if (parts.length >= 3) {
+                setMemTotal(parseInt(parts[1], 10) || 2048);
+                setMemUsed(parseInt(parts[2], 10) || 450);
+              }
+            }
+          }
+        }
+
+        if (psPart) {
+          const lines = psPart.trim().split('\n');
+          const parsed: ProcessItem[] = [];
+          for (let i = 1; i < lines.length; i++) {
+            const parts = lines[i].trim().split(/\s+/);
+            if (parts.length >= 5) {
+              parsed.push({
+                pid: parts[0],
+                user: parts[1],
+                stat: parts[2],
+                vsx: parts[3],
+                command: parts.slice(4).join(' '),
+              });
+            }
+          }
+          if (parsed.length > 0) {
+            setProcesses(parsed);
           }
         }
       }
-
-      const psRes = defaultShell.execute('ps aux');
-      const psLines = psRes.output.split('\n');
-      const parsed: ProcessItem[] = [];
-
-      for (const line of psLines) {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length >= 4 && !line.includes('PID')) {
-          parsed.push({
-            pid: parts[0],
-            user: parts[1] || 'root',
-            vsx: parts[2] || '0',
-            stat: 'S',
-            command: parts.slice(3).join(' ') || parts[2],
-          });
-        }
-      }
-
-      if (parsed.length > 0) {
-        setProcesses(parsed);
-      }
-
-      setCpuUsage(Math.floor(6 + Math.random() * 12));
+      setCpuUsage(Math.floor(4 + Math.random() * 8));
     } catch (e) {
       console.warn('System monitor fetch error:', e);
     } finally {
@@ -85,23 +99,31 @@ export const SystemMonitorApp: React.FC = () => {
 
   useEffect(() => {
     fetchMetrics();
-    const interval = setInterval(fetchMetrics, 4000);
+    const interval = setInterval(fetchMetrics, 5000);
     return () => clearInterval(interval);
   }, []);
 
   const handleKill = async (pid: string) => {
     if (pid === '1') {
-      alert('Cannot terminate PID 1 (/bin/init) - system kernel requirement.');
+      setActionNotice('Cannot terminate PID 1 (/bin/init) — system kernel requirement.');
+      setTimeout(() => setActionNotice(null), 3000);
       return;
     }
-    if (!confirm(`Send SIGTERM to process PID ${pid}?`)) return;
 
     try {
-      if (v86Service.isReady()) {
-        await v86Service.execCommand(`kill -9 ${pid}`);
-      }
+      await fetch('/api/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: `kill -9 ${pid}`,
+          cwd: '/home/unigrova',
+          user: 'unigrova',
+        }),
+      });
       setProcesses((prev) => prev.filter((p) => p.pid !== pid));
       setSelectedPid(null);
+      setActionNotice(`Killed process PID ${pid}`);
+      setTimeout(() => setActionNotice(null), 2500);
     } catch (e) {
       console.error('Failed to kill process:', e);
     }
@@ -117,6 +139,11 @@ export const SystemMonitorApp: React.FC = () => {
         <div className="flex items-center gap-2">
           <Activity className="w-4 h-4 text-orange-500" />
           <span className="font-semibold text-stone-200">Linux System Monitor</span>
+          {actionNotice && (
+            <span className="ml-3 px-2 py-0.5 rounded bg-orange-950/80 text-orange-300 border border-orange-800 text-[11px]">
+              {actionNotice}
+            </span>
+          )}
         </div>
         <button
           onClick={fetchMetrics}

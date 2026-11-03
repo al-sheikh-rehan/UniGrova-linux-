@@ -15,20 +15,20 @@ interface TextEditorAppProps {
 }
 
 export const TextEditorApp: React.FC<TextEditorAppProps> = ({ initialPath }) => {
-  const [filePath, setFilePath] = useState<string>(initialPath || '/home/sheikh/welcome.txt');
+  const [filePath, setFilePath] = useState<string>(initialPath || '/home/unigrova/Documents/welcome.txt');
   const [content, setContent] = useState<string>('');
   const [isSaved, setIsSaved] = useState<boolean>(true);
   const [saveStatus, setSaveStatus] = useState<string>('Ready');
   const [openModal, setOpenModal] = useState<boolean>(false);
-  const [openPathInput, setOpenPathInput] = useState<string>('/home/sheikh');
+  const [openPathInput, setOpenPathInput] = useState<string>('/home/unigrova');
 
   useEffect(() => {
-    const target = initialPath || '/home/sheikh/welcome.txt';
+    const target = initialPath || '/home/unigrova/Documents/welcome.txt';
     loadFile(target);
   }, [initialPath]);
 
   const loadFile = (path: string) => {
-    const resolved = vfsService.resolvePath(path, '/home/sheikh');
+    const resolved = vfsService.resolvePath(path, '/home/unigrova');
     setSaveStatus(`Loading ${resolved}...`);
 
     const fileData = vfsService.readFile(resolved);
@@ -46,7 +46,7 @@ export const TextEditorApp: React.FC<TextEditorAppProps> = ({ initialPath }) => 
   };
 
   const handleSave = () => {
-    const resolved = vfsService.resolvePath(filePath, '/home/sheikh');
+    const resolved = vfsService.resolvePath(filePath, '/home/unigrova');
     setSaveStatus('Saving to Linux filesystem...');
 
     const ok = vfsService.writeFile(resolved, content);

@@ -57,17 +57,17 @@ export const TopBar: React.FC<TopBarProps> = ({
   }, []);
 
   return (
-    <header className="h-7 w-full bg-stone-950/95 text-stone-200 flex items-center justify-between px-3 text-xs select-none border-b border-stone-800/80 z-40 relative backdrop-blur-md">
+    <header className="h-8 w-full bg-black/80 text-stone-200 flex items-center justify-between px-3 text-xs select-none border-b border-black/40 z-40 relative backdrop-blur-xl">
       {/* Left: Activities & Active App */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <button
           onClick={onToggleLauncher}
-          className="font-medium hover:text-white px-2 py-0.5 rounded hover:bg-stone-800/80 transition-colors"
+          className="font-semibold text-stone-200 hover:text-white px-3 py-1 rounded-full hover:bg-white/10 active:bg-white/15 transition-all text-xs"
         >
           Activities
         </button>
         {activeWindowTitle && (
-          <span className="text-stone-400 font-medium hidden sm:inline truncate max-w-xs">
+          <span className="text-stone-400 font-medium hidden sm:inline truncate max-w-xs pl-2 border-l border-stone-800">
             {activeWindowTitle}
           </span>
         )}
@@ -77,7 +77,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       <div className="relative">
         <button
           onClick={() => setShowCalendar(!showCalendar)}
-          className="font-medium hover:text-white px-2 py-0.5 rounded hover:bg-stone-800/80 transition-colors flex items-center gap-1.5"
+          className="font-medium text-stone-200 hover:text-white px-3 py-1 rounded-full hover:bg-white/10 transition-colors flex items-center gap-1.5"
         >
           <span>{dateStr}</span>
           <span className="font-semibold text-stone-100">{timeStr}</span>
@@ -100,12 +100,13 @@ export const TopBar: React.FC<TopBarProps> = ({
       <div className="flex items-center gap-1.5">
         <button
           onClick={() => setShowStatusMenu(!showStatusMenu)}
-          className="flex items-center gap-2 px-2 py-0.5 rounded hover:bg-stone-800/80 transition-colors text-stone-300"
+          className="flex items-center gap-2 px-2.5 py-1 rounded-full hover:bg-stone-800/80 transition-colors text-stone-300 bg-stone-900/50 border border-stone-800/40"
         >
-          <Wifi className="w-3.5 h-3.5 text-emerald-400" />
-          <Volume2 className="w-3.5 h-3.5" />
-          <Battery className="w-3.5 h-3.5" />
-          <ChevronDown className="w-3 h-3 text-stone-400" />
+          <Wifi className="w-3.5 h-3.5 text-teal-400" />
+          <Volume2 className="w-3.5 h-3.5 text-stone-300" />
+          <Battery className="w-3.5 h-3.5 text-stone-300" />
+          <Power className="w-3.5 h-3.5 text-stone-300" />
+          <ChevronDown className="w-3 h-3 text-stone-500" />
         </button>
 
         {showStatusMenu && (

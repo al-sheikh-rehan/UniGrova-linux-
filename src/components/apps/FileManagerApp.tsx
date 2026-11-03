@@ -23,7 +23,7 @@ interface FileManagerAppProps {
 }
 
 export const FileManagerApp: React.FC<FileManagerAppProps> = ({ onOpenFileInEditor }) => {
-  const [currentPath, setCurrentPath] = useState<string>('/home/sheikh');
+  const [currentPath, setCurrentPath] = useState<string>('/home/unigrova');
   const [items, setItems] = useState<VFSEntry[]>([]);
   const [selectedItem, setSelectedItem] = useState<VFSEntry | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -197,16 +197,18 @@ export const FileManagerApp: React.FC<FileManagerAppProps> = ({ onOpenFileInEdit
         <div className="w-44 bg-stone-950/60 border-r border-stone-800 p-2 space-y-1 hidden md:block">
           <div className="text-[10px] uppercase font-semibold text-stone-500 px-2 py-1">Places</div>
           {[
-            { name: 'Home (/home/sheikh)', path: '/home/sheikh' },
-            { name: 'Documents', path: '/home/sheikh/Documents' },
-            { name: 'Downloads', path: '/home/sheikh/Downloads' },
-            { name: 'Projects', path: '/home/sheikh/Projects' },
+            { name: 'Home (/home/unigrova)', path: '/home/unigrova' },
+            { name: 'Desktop', path: '/home/unigrova/Desktop' },
+            { name: 'Documents', path: '/home/unigrova/Documents' },
+            { name: 'Downloads', path: '/home/unigrova/Downloads' },
+            { name: 'Music', path: '/home/unigrova/Music' },
+            { name: 'Pictures', path: '/home/unigrova/Pictures' },
+            { name: 'Projects', path: '/home/unigrova/Projects' },
             { name: 'Root (/)', path: '/' },
             { name: 'Root User (/root)', path: '/root' },
             { name: 'Config (/etc)', path: '/etc' },
             { name: 'Binaries (/bin)', path: '/bin' },
             { name: 'Temporary (/tmp)', path: '/tmp' },
-            { name: 'System (/proc)', path: '/proc' },
           ].map((place) => (
             <button
               key={place.path}

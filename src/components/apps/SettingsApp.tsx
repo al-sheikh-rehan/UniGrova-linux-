@@ -37,9 +37,15 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
 
   const wallpapers = [
     {
+      id: 'gnome-teal',
+      name: 'GNOME Adwaita Dark Teal',
+      desc: 'Dark teal and deep emerald green modern GNOME desktop curves',
+      url: '/src/assets/images/gnome_teal_wallpaper_1793641902891.jpg',
+    },
+    {
       id: 'jammy',
       name: 'Ubuntu Jammy Crest',
-      desc: 'Default aubergine origami folds with warm orange accents',
+      desc: 'Aubergine origami folds with warm orange accents',
       url: '/src/assets/images/ubuntu_jammy_wallpaper_1793457587205.jpg',
     },
     {
